@@ -25,16 +25,19 @@
 #define vtkDICOMApplyRescale_h
 
 #include "vtkDICOMAlgorithm.h"
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 class vtkDICOMRealWorldMapping;
 
-class VTK_DICOM_EXPORT vtkDICOMApplyRescale :
+class VTKDICOM_EXPORT vtkDICOMApplyRescale :
   public vtkDICOMAlgorithm
 {
 public:
-  static vtkDICOMApplyRescale *New();
   vtkTypeMacro(vtkDICOMApplyRescale, vtkDICOMAlgorithm);
+
+  // Description:
+  // Static method for construction.
+  static vtkDICOMApplyRescale *New();
 
   // Description:
   // Print information about this object.

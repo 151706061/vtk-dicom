@@ -2,7 +2,7 @@
 
   Program: DICOM for VTK
 
-  Copyright (c) 2012-2015 David Gobbi
+  Copyright (c) 2012-2016 David Gobbi
   All rights reserved.
   See Copyright.txt or http://dgobbi.github.io/bsd3.txt for details.
 
@@ -12,6 +12,7 @@
 
 =========================================================================*/
 
+#include "vtkDICOMConfig.h"
 #include "vtkDICOMParser.h"
 #include "vtkDICOMDictionary.h"
 #include "vtkDICOMDirectory.h"
@@ -20,6 +21,7 @@
 #include "vtkDICOMUtilities.h"
 
 // from dicomcli
+#include "vtkConsoleOutputWindow.h"
 #include "mainmacro.h"
 #include "readquery.h"
 
@@ -31,10 +33,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-#if defined(_WIN32)
-#include <windows.h>
-#endif
-
 #define MAX_INDENT 24
 #define INDENT_SIZE 2
 #define MAX_LENGTH 120
@@ -44,7 +42,7 @@ void printVersion(FILE *file, const char *cp)
 {
   fprintf(file, "%s %s\n", cp, DICOM_VERSION);
   fprintf(file, "\n"
-    "Copyright (c) 2012-2015, David Gobbi.\n\n"
+    "Copyright (c) 2012-2016, David Gobbi.\n\n"
     "This software is distributed under an open-source license.  See the\n"
     "Copyright.txt file that comes with the vtk-dicom source distribution.\n");
 }
@@ -169,24 +167,32 @@ void printElement(
              vr == vtkDICOMVR::UT)
       {
       // replace breaks with "\\", cap length to MAX_LENGTH
+      size_t l = (vl > MAX_LENGTH ? MAX_LENGTH-4 : vl);
       const char *cp = v.GetCharData();
-      unsigned int j = 0;
-      while (j < vl && cp[j] != '\0')
+      std::string utf8;
+      if (v.GetCharacterSet() != vtkDICOMCharacterSet::ISO_IR_6)
         {
-        unsigned int k = j;
-        unsigned int m = j;
-        for (; j < vl && cp[j] != '\0'; j++)
+        utf8 = v.GetCharacterSet().ConvertToUTF8(cp, l);
+        l = utf8.length();
+        cp = utf8.data();
+        }
+      size_t j = 0;
+      while (j < l && cp[j] != '\0')
+        {
+        size_t k = j;
+        size_t m = j;
+        for (; j < l && cp[j] != '\0'; j++)
           {
           m = j;
           if (cp[j] == '\r' || cp[j] == '\n' || cp[j] == '\f')
             {
             do { j++; }
-            while (j < vl && (cp[j] == '\r' || cp[j] == '\n' || cp[j] == '\f'));
+            while (j < l && (cp[j] == '\r' || cp[j] == '\n' || cp[j] == '\f'));
             break;
             }
           m++;
           }
-        if (j == vl)
+        if (j == l)
           {
           while (m > 0 && cp[m-1] == ' ') { m--; }
           }
@@ -195,9 +201,8 @@ void printElement(
           s.append("\\\\");
           }
         s.append(&cp[k], m-k);
-        if (s.size() > MAX_LENGTH)
+        if (vl > MAX_LENGTH)
           {
-          s.resize(MAX_LENGTH-4);
           s.append("...");
           break;
           }
@@ -400,8 +405,11 @@ void printElementFromTagPath(
 }
 
 // This program will dump all the metadata in the given file
-MAINMACRO(argc, argv)
+int MAINMACRO(int argc, char *argv[])
 {
+  // redirect all VTK errors to stderr
+  vtkConsoleOutputWindow::Install();
+
   int rval = 0;
 
   // for the optional query file
@@ -497,12 +505,6 @@ MAINMACRO(argc, argv)
     vtkSmartPointer<vtkDICOMMetaData>::New();
   parser->SetMetaData(data);
 
-#if defined(_WIN32)
-  // Temporarily switch the console to utf-8
-  UINT codePage = GetConsoleOutputCP();
-  SetConsoleOutputCP(65001);
-#endif
-
   int m = sorter->GetNumberOfStudies();
   for (int j = 0; j < m; j++)
     {
@@ -565,11 +567,6 @@ MAINMACRO(argc, argv)
         }
       }
     }
-
-#if defined(_WIN32)
-  // Restore the console code page
-  SetConsoleOutputCP(codePage);
-#endif
 
   return rval;
 }

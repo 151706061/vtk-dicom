@@ -13,6 +13,9 @@
 =========================================================================*/
 #include "vtkDICOMDirectory.h"
 
+#include "vtkDICOMFile.h"
+#include "vtkDICOMFileDirectory.h"
+#include "vtkDICOMFilePath.h"
 #include "vtkDICOMItem.h"
 #include "vtkDICOMMetaData.h"
 #include "vtkDICOMSequence.h"
@@ -37,9 +40,6 @@
 #include <map>
 #include <algorithm>
 #include <utility>
-
-#include <vtksys/SystemTools.hxx>
-#include <vtksys/Directory.hxx>
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -142,9 +142,11 @@ vtkDICOMDirectory::vtkDICOMDirectory()
   this->InternalFileName = 0;
   this->RequirePixelData = 1;
   this->FollowSymlinks = 1;
+  this->ShowHidden = 1;
   this->ScanDepth = 1;
   this->Query = 0;
   this->FindLevel = vtkDICOMDirectory::IMAGE;
+  this->UsingOsirixDatabase = false;
 }
 
 //----------------------------------------------------------------------------
@@ -246,15 +248,36 @@ void vtkDICOMDirectory::SetInputFileNames(vtkStringArray *sa)
 {
   if (sa != this->InputFileNames)
     {
-    if (this->InputFileNames)
+    if (!sa)
       {
       this->InputFileNames->Delete();
       }
-    if (sa)
+    else
       {
-      sa->Register(this);
+      if (!this->InputFileNames)
+        {
+        this->InputFileNames = vtkStringArray::New();
+        }
+      this->InputFileNames->DeepCopy(sa);
       }
-    this->InputFileNames = sa;
+    this->Modified();
+    }
+}
+
+//----------------------------------------------------------------------------
+void vtkDICOMDirectory::AddInputFileNames(vtkStringArray *sa)
+{
+  if (sa && sa->GetNumberOfValues() > 0)
+    {
+    if (!this->InputFileNames)
+      {
+      this->InputFileNames = vtkStringArray::New();
+      }
+    vtkIdType n = sa->GetNumberOfValues();
+    for (vtkIdType i = 0; i < n; i++)
+      {
+      this->InputFileNames->InsertNextValue(sa->GetValue(i));
+      }
     this->Modified();
     }
 }
@@ -365,6 +388,106 @@ vtkDICOMMetaData *vtkDICOMDirectory::GetMetaDataForSeries(int i)
 }
 
 //----------------------------------------------------------------------------
+// The following code does loose matching to accomodate the way that Osirix
+// modifies some attributes before storing them in its database
+
+namespace {
+
+// Perform cleanup of a string according to Osirix rules.
+std::string OsirixCleanString(const std::string& text)
+{
+  std::string s;
+  size_t l = text.length();
+  if (l > 0)
+    {
+    char space = '\0';
+    for (size_t i = 0; i < l; i++)
+      {
+      char c = text[i];
+      switch (c)
+        {
+        case ',':
+        case '^':
+          c = '\0';
+          space = ' ';
+          break;
+        case '/':
+          c = '-';
+          break;
+        case '\r':
+        case '\n':
+          c = '\0';
+          break;
+        case '\"':
+          c = '\'';
+          break;
+        case ' ':
+          c = '\0';
+          space = ' ';
+          break;
+        }
+      if (c)
+        {
+        if (space)
+          {
+          s.push_back(space);
+          space = '\0';
+          }
+        s.push_back(c);
+        }
+      }
+    }
+
+  return s;
+}
+
+// Loose matching for checking against Osirix database
+bool MatchesOsirixDatabase(
+  vtkDICOMTag tag, const vtkDICOMValue& u, const vtkDICOMValue& v)
+{
+  bool needsCleanCompare = false;
+  unsigned short g = tag.GetGroup();
+  if (u.GetNumberOfValues() > 0 && v.GetNumberOfValues() > 0 &&
+      (g == 0x0008 || g == 0x0010))
+    {
+    const DC::EnumType tagsToClean[] = {
+      DC::StudyDescription,
+      DC::SeriesDescription,
+      DC::PatientName,
+      DC::InstitutionName,
+      DC::ReferringPhysicianName,
+      DC::PerformingPhysicianName,
+      DC::ItemDelimitationItem
+    };
+
+    for (int i = 0; tagsToClean[i] != DC::ItemDelimitationItem; i++)
+      {
+      needsCleanCompare |= (tag == tagsToClean[i]);
+      }
+    }
+
+  bool matched = false;
+  if (needsCleanCompare)
+    {
+    vtkDICOMValue uclean(
+      u.GetVR(), vtkDICOMCharacterSet::ISO_IR_192,
+      OsirixCleanString(u.AsUTF8String()));
+    vtkDICOMValue vclean(
+      v.GetVR(), vtkDICOMCharacterSet::ISO_IR_192,
+      OsirixCleanString(v.AsUTF8String()));
+    matched = uclean.Matches(vclean);
+    }
+  else
+    {
+    matched = u.Matches(v);
+    }
+
+  return matched;
+}
+
+}
+
+//----------------------------------------------------------------------------
 bool vtkDICOMDirectory::MatchesQuery(
   const vtkDICOMItem& record, vtkDICOMItem& results)
 {
@@ -382,13 +505,20 @@ bool vtkDICOMDirectory::MatchesQuery(
         if (v.IsValid())
           {
           const vtkDICOMValue& u = iter->GetValue();
-          if (u.Matches(v))
+          if (this->UsingOsirixDatabase)
+            {
+            matched = MatchesOsirixDatabase(tag, u, v);
+            }
+          else
+            {
+            matched = u.Matches(v);
+            }
+          if (matched)
             {
             results.SetAttributeValue(tag, u);
             }
           else
             {
-            matched = false;
             break;
             }
           }
@@ -615,11 +745,7 @@ void vtkDICOMDirectory::AddSeriesFileNames(
     item.FirstSeries = series;
     item.LastSeries = series;
     }
-  else if (n >= 0 && study == n-1)
-    {
-    (*this->Studies)[study].LastSeries = series;
-    }
-  else
+  else if (n < 0 || study != n-1)
     {
     vtkErrorMacro("AddSeriesFileNames: non-monotonically increasing study")
     return;
@@ -656,23 +782,82 @@ void vtkDICOMDirectory::AddSeriesFileNames(
     return;
     }
 
+  // Check for files that are duplicate instances
   int ni = static_cast<int>(files->GetNumberOfValues());
-  vtkSmartPointer<vtkDICOMMetaData> meta =
-    vtkSmartPointer<vtkDICOMMetaData>::New();
-  meta->SetNumberOfInstances(ni);
-  this->CopyRecord(meta, &patientRecord, -1);
-  this->CopyRecord(meta, &studyRecord, -1);
-  this->CopyRecord(meta, &seriesRecord, -1);
+  std::vector<const vtkDICOMValue *> uids(ni);
   for (int ii = 0; ii < ni; ii++)
     {
-    this->CopyRecord(meta, imageRecords[ii], ii);
+    uids[ii] = &imageRecords[ii]->GetAttributeValue(DC::SOPInstanceUID);
+    }
+  std::vector<int> duplicate(ni);
+  std::vector<int> seriesLength;
+  seriesLength.push_back(0);
+  int numberOfDuplicates = 0;
+  for (int ii = 0; ii < ni; ii++)
+    {
+    int count = 0;
+    const vtkDICOMValue *uid = uids[ii];
+    if (uid->GetVL() > 0)
+      {
+      for (int jj = 0; jj < ii; jj++)
+        {
+        if (*(uids[jj]) == *uid)
+          {
+          count++;
+          }
+        }
+      }
+    duplicate[ii] = count;
+    if (count > numberOfDuplicates)
+      {
+      numberOfDuplicates = count;
+      seriesLength.push_back(0);
+      }
+    seriesLength[count]++;
     }
 
-  this->Series->push_back(SeriesItem());
-  SeriesItem& item = this->Series->back();
-  item.Record = seriesRecord;
-  item.Files = files;
-  item.Meta = meta;
+  // Add each duplicate as a separate series
+  for (int kk = 0; kk <= numberOfDuplicates; kk++)
+    {
+    vtkSmartPointer<vtkDICOMMetaData> meta =
+      vtkSmartPointer<vtkDICOMMetaData>::New();
+    meta->SetNumberOfInstances(seriesLength[kk]);
+    this->CopyRecord(meta, &patientRecord, -1);
+    this->CopyRecord(meta, &studyRecord, -1);
+    this->CopyRecord(meta, &seriesRecord, -1);
+
+    vtkSmartPointer<vtkStringArray> newfiles;
+    if (numberOfDuplicates > 0)
+      {
+      newfiles = vtkSmartPointer<vtkStringArray>::New();
+      newfiles->SetNumberOfValues(seriesLength[kk]);
+      }
+    else
+      {
+      newfiles = files;
+      }
+
+    int jj = 0;
+    for (int ii = 0; ii < ni; ii++)
+      {
+      if (duplicate[ii] == kk)
+        {
+        this->CopyRecord(meta, imageRecords[ii], jj);
+        if (numberOfDuplicates > 0)
+          {
+          newfiles->SetValue(jj, files->GetValue(ii));
+          }
+        jj++;
+        }
+      }
+
+    (*this->Studies)[study].LastSeries = series++;
+    this->Series->push_back(SeriesItem());
+    SeriesItem& item = this->Series->back();
+    item.Record = seriesRecord;
+    item.Files = newfiles;
+    item.Meta = meta;
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -807,6 +992,27 @@ void vtkDICOMDirectory::FillPatientRecord(
 }
 
 //----------------------------------------------------------------------------
+namespace {
+
+unsigned int vtkDICOMDirectoryHashString(const std::string& str)
+{
+  // Compute a string hash based on the function "djb2".
+  unsigned int h = 5381;
+  size_t n = str.size();
+  const char *cp = str.data();
+  for (size_t k = 0; k < n; k++)
+    {
+    unsigned char c = cp[k];
+    if (c == '\0') { break; }
+    h = (h << 5) + h + c;
+    }
+
+  return h;
+}
+
+}
+
+//----------------------------------------------------------------------------
 void vtkDICOMDirectory::SortFiles(vtkStringArray *input)
 {
   vtkSmartPointer<vtkDICOMMetaData> meta =
@@ -884,13 +1090,64 @@ void vtkDICOMDirectory::SortFiles(vtkStringArray *input)
   SeriesInfoList::iterator li;
 
   vtkIdType numberOfStrings = input->GetNumberOfValues();
+
+  // Hash table for efficiently checking for duplicates
+  typedef std::vector<vtkIdType> rowType;
+  typedef std::vector<rowType> tableType;
+  tableType dupcheck(numberOfStrings/4 + 1);
+  std::vector<std::string> realnames;
+  realnames.reserve(numberOfStrings);
+
   for (vtkIdType j = 0; j < numberOfStrings; j++)
     {
     const std::string& fileName = input->GetValue(j);
 
+    // Check to see if this file name has already appeared, this is
+    // done with a hash table and is an O(n) check, which is better
+    // than using std::map at O(n log n) or brute-force at O(n^2)
+    realnames.push_back(vtkDICOMFilePath(fileName).GetRealPath());
+    const std::string& realname = realnames.back();
+    unsigned int hash = vtkDICOMDirectoryHashString(realname);
+    hash = hash % dupcheck.size();
+    rowType& row = dupcheck[hash];
+    rowType::iterator iter = row.begin();
+    for (; iter != row.end(); ++iter)
+      {
+      if (realnames[*iter] == realname)
+        {
+        break;
+        }
+      }
+    if (iter != row.end())
+      {
+      continue;
+      }
+    row.push_back(j);
+
     // Skip anything that does not look like a DICOM file.
     if (!vtkDICOMUtilities::IsDICOMFile(fileName.c_str()))
       {
+      int code = vtkDICOMFile::Access(fileName.c_str(), vtkDICOMFile::In);
+      if (code == vtkDICOMFile::FileNotFound)
+        {
+        vtkWarningMacro("File does not exist: " << fileName.c_str());
+        }
+      else if (code == vtkDICOMFile::AccessDenied)
+        {
+        vtkWarningMacro("File permission denied: " << fileName.c_str());
+        }
+      else if (code == vtkDICOMFile::FileIsDirectory)
+        {
+        vtkWarningMacro("File is a directory: " << fileName.c_str());
+        }
+      else if (code == vtkDICOMFile::ImpossiblePath)
+        {
+        vtkWarningMacro("Bad file path: " << fileName.c_str());
+        }
+      else if (code != 0)
+        {
+        vtkWarningMacro("Unknown file error: " << fileName.c_str());
+        }
       continue;
       }
 
@@ -1152,10 +1409,9 @@ void vtkDICOMDirectory::ProcessOsirixDatabase(const char *fname)
     }
 
   // Create the path to DATABASE.noindex, where .dcm files are stored
-  std::vector<std::string> path;
-  vtksys::SystemTools::SplitPath(fname, path);
-  path.pop_back();
-  path.push_back("DATABASE.noindex");
+  vtkDICOMFilePath path(fname);
+  path.PopBack();
+  path.PushBack("DATABASE.noindex");
 
   vtkSQLQuery *q = dbase->GetQueryInstance();
 
@@ -1288,8 +1544,7 @@ void vtkDICOMDirectory::ProcessOsirixDatabase(const char *fname)
     vtkDICOMItem studyItem;
     vtkTypeInt64 zstudy = st->col[ST_PK].ToTypeInt64();
     std::string name = st->col[ST_NAME].ToString();
-    std::replace(name.begin(), name.end(), ' ', '^');
-    std::string patientID = st->col[ST_NAME].ToString();
+    std::string patientID = st->col[ST_PATIENTID].ToString();
 
     // Seconds between our time base and database time base
     const double timediff = 978307200.0;
@@ -1431,11 +1686,11 @@ void vtkDICOMDirectory::ProcessOsirixDatabase(const char *fname)
           vtkTypeInt64 dnum = (fnum/10000 + 1)*10000;
           vtkVariant fv(fnum);
           vtkVariant dv(dnum);
-          path.push_back(dv.ToString());
-          path.push_back(fv.ToString() + ".dcm");
-          fpath = vtksys::SystemTools::JoinPath(path);
-          path.pop_back();
-          path.pop_back();
+          path.PushBack(dv.ToString());
+          path.PushBack(fv.ToString() + ".dcm");
+          fpath = path.AsString();
+          path.PopBack();
+          path.PopBack();
           }
         else if (fpath[0] != '/')
           {
@@ -1443,11 +1698,11 @@ void vtkDICOMDirectory::ProcessOsirixDatabase(const char *fname)
           vtkTypeInt64 fnum = atol(fpath.c_str());
           vtkTypeInt64 dnum = (fnum/10000 + 1)*10000;
           vtkVariant dv(dnum);
-          path.push_back(dv.ToString());
-          path.push_back(fpath);
-          fpath = vtksys::SystemTools::JoinPath(path);
-          path.pop_back();
-          path.pop_back();
+          path.PushBack(dv.ToString());
+          path.PushBack(fpath);
+          fpath = path.AsString();
+          path.PopBack();
+          path.PopBack();
           }
         if (fpath != lastpath)
           {
@@ -1483,9 +1738,15 @@ void vtkDICOMDirectory::ProcessOsirixDatabase(const char *fname)
           imageRecords[i] = &data[i];
           }
 
+        // Set a flag to indicate that loose matching is needed, because
+        // the Osirix database "cleans" certain attribute value strings
+        this->UsingOsirixDatabase = true;
+
         this->AddSeriesWithQuery(
           patientIdx, studyIdx, fileNames,
           patientItem, studyItem, seriesItem, &imageRecords[0]);
+
+        this->UsingOsirixDatabase = false;
         }
 
       // Check for abort and update progress at 1% intervals
@@ -1569,15 +1830,6 @@ void vtkDICOMDirectory::ProcessDirectoryFile(
     vtkSmartPointer<vtkStringArray>::New();
   std::vector<const vtkDICOMItem *> imageRecords;
 
-  // Path broken into components.
-  std::vector<std::string> path;
-  vtksys::SystemTools::SplitPath(dirname, path);
-  if (path.size() > 0 && path.back() == "")
-    {
-    path.pop_back();
-    }
-  size_t pathDepth = path.size();
-
   // The entry type that is currently being processed.
   std::string entryType;
 
@@ -1625,13 +1877,33 @@ void vtkDICOMDirectory::ProcessDirectoryFile(
           unsigned int m = fileID.GetNumberOfValues();
           if (m > 0)
             {
+            vtkDICOMFilePath path(dirname);
             for (unsigned int k = 0; k < m; k++)
               {
-              path.push_back(fileID.GetString(k));
+              path.PushBack(fileID.GetString(k));
               }
-            fileNames->InsertNextValue(vtksys::SystemTools::JoinPath(path));
-            path.resize(pathDepth);
+            vtkIdType ki = fileNames->InsertNextValue(path.AsString());
             imageRecords.push_back(&items[j]);
+            // sort the files by instance number, they will almost always
+            // already be in order so we use a simple algorithm
+            int inst = items[j].GetAttributeValue(DC::InstanceNumber).AsInt();
+            while (ki > 0)
+              {
+              const vtkDICOMItem *prev = imageRecords[--ki];
+              int inst2 = prev->GetAttributeValue(DC::InstanceNumber).AsInt();
+              if (inst < inst2)
+                {
+                std::string s = fileNames->GetValue(ki + 1);
+                fileNames->SetValue(ki + 1, fileNames->GetValue(ki));
+                fileNames->SetValue(ki, s);
+                std::swap(imageRecords[ki], imageRecords[ki + 1]);
+                }
+              else
+                {
+                // sorting is finished!
+                break;
+                }
+              }
             }
           }
         }
@@ -1704,7 +1976,7 @@ void vtkDICOMDirectory::ProcessDirectory(
 {
   // Check if the directory has been visited yet.  This avoids infinite
   // recursion when following circular links.
-  std::string realname = vtksys::SystemTools::GetRealPath(dirname);
+  std::string realname = vtkDICOMFilePath(dirname).GetRealPath();
   std::vector<std::string>::iterator viter =
     std::lower_bound(this->Visited->begin(), this->Visited->end(), realname);
   if (viter == this->Visited->end() || *viter != realname)
@@ -1719,22 +1991,17 @@ void vtkDICOMDirectory::ProcessDirectory(
     }
 
   // Find the path to the directory.
-  std::vector<std::string> path;
-  vtksys::SystemTools::SplitPath(dirname, path);
-  if (path.size() > 0 && path.back() == "")
-    {
-    path.pop_back();
-    }
+  vtkDICOMFilePath path(dirname);
 
   if (depth == this->ScanDepth)
     {
     // Build the path to the DICOMDIR file.
-    path.push_back("DICOMDIR");
-    std::string dicomdir = vtksys::SystemTools::JoinPath(path);
-    path.pop_back();
+    path.PushBack("DICOMDIR");
+    std::string dicomdir = path.AsString();
+    path.PopBack();
 
     // Check to see if the DICOMDIR file exists.
-    if (vtksys::SystemTools::FileExists(dicomdir.c_str(), true))
+    if (vtkDICOMFile::Access(dicomdir.c_str(), vtkDICOMFile::In) == 0)
       {
       vtkSmartPointer<vtkDICOMMetaData> meta =
         vtkSmartPointer<vtkDICOMMetaData>::New();
@@ -1780,8 +2047,8 @@ void vtkDICOMDirectory::ProcessDirectory(
     return;
     }
 
-  vtksys::Directory d;
-  if (!d.Load(dirname))
+  vtkDICOMFileDirectory d(dirname);
+  if (d.GetError() != 0)
     {
     // Only fail at the initial depth.
     if (depth == this->ScanDepth)
@@ -1792,21 +2059,31 @@ void vtkDICOMDirectory::ProcessDirectory(
       }
     }
 
-  unsigned long n = d.GetNumberOfFiles();
-  for (unsigned long i = 0; i < n; i++)
+  int n = d.GetNumberOfFiles();
+  for (int i = 0; i < n; i++)
     {
     const char *fname = d.GetFile(i);
-    if (fname[0] != '.' && strcmp(fname, "DICOMDIR") != 0)
+    if ((fname[0] != '.' || (fname[1] != '\0' &&
+         (fname[1] != '.' || fname[2] != '\0'))) &&
+        strcmp(fname, "DICOMDIR") != 0)
       {
-      path.push_back(fname);
-      std::string fileString = vtksys::SystemTools::JoinPath(path);
-      path.pop_back();
-      if (!this->FollowSymlinks &&
-          vtksys::SystemTools::FileIsSymlink(fileString.c_str()))
+      path.PushBack(fname);
+      std::string fileString = path.AsString();
+      path.PopBack();
+      if (!this->FollowSymlinks && d.IsSymlink(i))
         {
         // Do nothing unless FollowSymlinks is On
         }
-      else if (vtksys::SystemTools::FileIsDirectory(fileString.c_str()))
+#ifdef _WIN32
+      else if (!this->ShowHidden && d.IsHidden(i))
+#else
+      else if (!this->ShowHidden && (d.IsHidden(i) || fname[0] == '.'))
+#endif
+        {
+        // Do nothing for hidden files unless ShowHidden is On
+        // (on Linux and OS X, consider "." files to be hidden)
+        }
+      else if (d.IsDirectory(i))
         {
         if (depth > 1)
           {
@@ -1845,9 +2122,34 @@ void vtkDICOMDirectory::Execute()
     for (vtkIdType i = 0; i < this->InputFileNames->GetNumberOfValues(); i++)
       {
       const std::string& fname = this->InputFileNames->GetValue(i);
-      if (vtksys::SystemTools::FileIsDirectory(fname.c_str()))
+      int code = vtkDICOMFile::Access(fname.c_str(), vtkDICOMFile::In);
+      if (code == vtkDICOMFile::FileIsDirectory)
         {
         this->ProcessDirectory(fname.c_str(), this->ScanDepth, files);
+        }
+      else if (code == vtkDICOMFile::FileNotFound)
+        {
+        this->ErrorCode = vtkErrorCode::FileNotFoundError;
+        vtkErrorMacro("File or directory not found: " << fname.c_str());
+        return;
+        }
+      else if (code == vtkDICOMFile::AccessDenied)
+        {
+        this->ErrorCode = vtkErrorCode::CannotOpenFileError;
+        vtkErrorMacro("Permission denied: " << fname.c_str());
+        return;
+        }
+      else if (code == vtkDICOMFile::ImpossiblePath)
+        {
+        this->ErrorCode = vtkErrorCode::CannotOpenFileError;
+        vtkErrorMacro("Bad file path: " << fname.c_str());
+        return;
+        }
+      else if (code != 0)
+        {
+        this->ErrorCode = vtkErrorCode::UnknownError;
+        vtkErrorMacro("Unknown file error: " << fname.c_str());
+        return;
         }
       else if (vtkDICOMUtilities::PatternMatches("*.sql", fname.c_str()))
         {
@@ -1868,20 +2170,42 @@ void vtkDICOMDirectory::Execute()
       // No directory is a valid input.  Return an empty output.
       return;
       }
-    else if (!vtksys::SystemTools::FileExists(this->DirectoryName))
+
+    int code = vtkDICOMFile::Access(this->DirectoryName, vtkDICOMFile::In);
+    if (code == vtkDICOMFile::FileIsDirectory)
+      {
+      this->ProcessDirectory(this->DirectoryName, this->ScanDepth, files);
+      }
+    else if (code == vtkDICOMFile::FileNotFound)
       {
       this->ErrorCode = vtkErrorCode::FileNotFoundError;
       vtkErrorMacro("Directory not found: " << this->DirectoryName);
       return;
       }
-    else if (!vtksys::SystemTools::FileIsDirectory(this->DirectoryName))
+    else if (code == vtkDICOMFile::AccessDenied)
+      {
+      this->ErrorCode = vtkErrorCode::CannotOpenFileError;
+      vtkErrorMacro("Permission denied: " << this->DirectoryName);
+      return;
+      }
+    else if (code == vtkDICOMFile::ImpossiblePath)
+      {
+      this->ErrorCode = vtkErrorCode::CannotOpenFileError;
+      vtkErrorMacro("Bad file path: " << this->DirectoryName);
+      return;
+      }
+    else if (code != 0)
+      {
+      this->ErrorCode = vtkErrorCode::UnknownError;
+      vtkErrorMacro("Unknown error: " << this->DirectoryName);
+      return;
+      }
+    else
       {
       this->ErrorCode = vtkErrorCode::CannotOpenFileError;
       vtkErrorMacro("Found a file, not a directory: " << this->DirectoryName);
       return;
       }
-
-    this->ProcessDirectory(this->DirectoryName, this->ScanDepth, files);
     }
 
   // Check for abort.

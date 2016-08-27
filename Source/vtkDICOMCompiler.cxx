@@ -2,7 +2,7 @@
 
   Program: DICOM for VTK
 
-  Copyright (c) 2012-2015 David Gobbi
+  Copyright (c) 2012-2016 David Gobbi
   All rights reserved.
   See Copyright.txt or http://dgobbi.github.io/bsd3.txt for details.
 
@@ -504,6 +504,16 @@ size_t Encoder<E>::WriteElementHead(
     cp[7] = 0;
     Encoder<E>::PutInt32(cp+8, vl);
     }
+  else if (vl > 65534)
+    {
+    // CP-1066 allows overlength values to be written as UN
+    hl = 12;
+    cp[4] = 'U';
+    cp[5] = 'N';
+    cp[6] = 0;
+    cp[7] = 0;
+    Encoder<E>::PutInt32(cp+8, vl);
+    }
   return hl;
 }
 
@@ -951,13 +961,6 @@ void vtkDICOMCompiler::GenerateSeriesUIDs()
     this->SeriesUIDs->InsertNextValue(
       vtkDICOMUtilities::GenerateUID(DC::SeriesInstanceUID));
     }
-
-  // study UID is only generated once per session
-  if (vtkDICOMCompiler::StudyUID[0] == '\0')
-    {
-    std::string uid = vtkDICOMUtilities::GenerateUID(DC::StudyInstanceUID);
-    strcpy(vtkDICOMCompiler::StudyUID, uid.c_str());
-    }
 }
 
 //----------------------------------------------------------------------------
@@ -1125,9 +1128,10 @@ bool vtkDICOMCompiler::WriteFile(vtkDICOMMetaData *data, int idx)
     }
 
   // Generate fresh UIDs if at index zero
-  if (idx == 0 || this->SeriesUIDs == 0 ||
-      this->SeriesUIDs->GetNumberOfValues() !=
-      data->GetNumberOfInstances() + 1)
+  if ((this->SOPInstanceUID == 0 || this->SeriesInstanceUID == 0) &&
+      (idx == 0 || this->SeriesUIDs == 0 ||
+       this->SeriesUIDs->GetNumberOfValues() !=
+       data->GetNumberOfInstances() + 1))
     {
     this->GenerateSeriesUIDs();
     }
@@ -1142,7 +1146,7 @@ bool vtkDICOMCompiler::WriteFile(vtkDICOMMetaData *data, int idx)
       {
       errText = "No permission to write the file ";
       }
-    else if (this->OutputFile->GetError() == vtkDICOMFile::IsDirectory)
+    else if (this->OutputFile->GetError() == vtkDICOMFile::FileIsDirectory)
       {
       errText = "The selected file is a directory ";
       }
@@ -1476,6 +1480,12 @@ bool vtkDICOMCompiler::WriteMetaData(
   if (studyUID == 0 &&
       meta->GetAttributeValue(DC::StudyInstanceUID).AsString() == "")
     {
+    // study UID is only generated once per session
+    if (vtkDICOMCompiler::StudyUID[0] == '\0')
+      {
+      std::string uid = vtkDICOMUtilities::GenerateUID(DC::StudyInstanceUID);
+      strcpy(vtkDICOMCompiler::StudyUID, uid.c_str());
+      }
     studyUID = vtkDICOMCompiler::StudyUID;
     }
 
@@ -1581,16 +1591,22 @@ unsigned int vtkDICOMCompiler::ComputePixelDataSize()
 
 //----------------------------------------------------------------------------
 bool vtkDICOMCompiler::FlushBuffer(
-  unsigned char* &ucp, unsigned char* &)
+  unsigned char* &ucp, unsigned char* &ep)
 {
+  bool rval = true;
   const unsigned char *cp = ucp;
   unsigned char *dp = this->Buffer;
   ucp = dp;
-  size_t n = cp - dp;
+  ep = dp + this->ChunkSize;
 
-  size_t m = this->OutputFile->Write(dp, n);
+  if (cp)
+    {
+    size_t n = cp - dp;
+    size_t m = this->OutputFile->Write(dp, n);
+    rval = (n == m);
+    }
 
-  return (n == m);
+  return rval;
 }
 
 //----------------------------------------------------------------------------

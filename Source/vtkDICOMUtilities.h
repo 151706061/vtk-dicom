@@ -14,22 +14,29 @@
 #ifndef vtkDICOMUtilities_h
 #define vtkDICOMUtilities_h
 
-#include <vtkSystemIncludes.h>
 #include <vtkObject.h>
-#include "vtkDICOMModule.h"
-#include "vtkDICOMTag.h"
-
-#include <string>
+#include <vtkStdString.h> // For std::string
+#include "vtkDICOMModule.h" // For export macro
+#include "vtkDICOMTag.h" // For method parameter
 
 class vtkStringArray;
 
 //! Utility functions for use with DICOM classes.
-class VTK_DICOM_EXPORT vtkDICOMUtilities : public vtkObject
+class VTKDICOM_EXPORT vtkDICOMUtilities : public vtkObject
 {
 public:
+  //@{
+  //! VTK new method (for Java and Tcl wrappers)
+  static vtkDICOMUtilities *New();
+
   //! VTK dynamic type information macro.
   vtkTypeMacro(vtkDICOMUtilities, vtkObject);
 
+  //! Print a summary of the contents of this object.
+  void PrintSelf(ostream& os, vtkIndent indent);
+  //@}
+
+  //@{
   //! Set a UID prefix to use when generating UIDs.
   /*!
    *  This is optional, if you do not own a UID prefix then the publicly
@@ -37,7 +44,9 @@ public:
    */
   static void SetUIDPrefix(const char *prefix);
   static const char *GetUIDPrefix();
+  //@}
 
+  //@{
   //! Generate a UID for the provided tag.
   static std::string GenerateUID(vtkDICOMTag tag);
 
@@ -53,7 +62,9 @@ public:
 
   //! Numerically compare two UIDs, returns -1, 0, or +1.
   static int CompareUIDs(const char *u1, const char *u2);
+  //@}
 
+  //@{
   //! Generate a DICOM date time string in the given timezone.
   /*!
    *  The time zone is to be given in the DICOM format of
@@ -93,7 +104,9 @@ public:
    *  can pass a null pointer.
    */
   static long long GetUTC(long long *offset);
+  //@}
 
+  //@{
   //! Check if the specified file is a DICOM file.
   /*!
    *  This will return true if the file exists, is readable, and
@@ -101,7 +114,9 @@ public:
    *  the file look like DICOM data elements.
    */
   static bool IsDICOMFile(const char *filename);
+  //@}
 
+  //@{
   //! Get the UID for this DICOM implementation.
   static const char *GetImplementationClassUID();
 
@@ -123,7 +138,9 @@ public:
    *  The ImplementationVersionName appears in the DICOM meta header.
    */
   static void SetImplementationVersionName(const char *name);
+  //@}
 
+  //@{
   //! Unpack one little-endian int from a stream of bytes.
   /*!
    *  This is a very common operation that is required in many different
@@ -142,7 +159,9 @@ public:
     cp[1] = static_cast<unsigned char>(i >> 8);
     cp[2] = static_cast<unsigned char>(i >> 16);
     cp[3] = static_cast<unsigned char>(i >> 24); }
+  //@}
 
+  //@{
   //! Return true if the pattern matches the given string (utf-8).
   /*!
    *  This performs simple matching with "*" and "?" as the only wildcard.
@@ -154,16 +173,19 @@ public:
   //! Match patterns on non-terminated strings.
   static bool PatternMatches(
     const char *pattern, size_t pl, const char *val, size_t vl);
+  //@}
 
+  //@{
   //! Get the name associated with the given UID.
   static const char *GetUIDName(const char *uid);
 
   //! Get the CID from the UID.
   unsigned short GetCIDFromUID(const char *uid);
+  //@}
 
 protected:
-  vtkDICOMUtilities();
-  ~vtkDICOMUtilities();
+  vtkDICOMUtilities() {}
+  ~vtkDICOMUtilities() {}
 
   static char UIDPrefix[64];
   static char ImplementationClassUID[65];

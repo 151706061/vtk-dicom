@@ -15,7 +15,7 @@
 #define vtkDICOMCharacterSet_h
 
 #include <vtkSystemIncludes.h>
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 #include <string>
 
@@ -31,7 +31,7 @@
  *  GB18030/GBK, although only a subset of the iso-2022 escape codes are
  *  supported by DICOM.
  */
-class VTK_DICOM_EXPORT vtkDICOMCharacterSet
+class VTKDICOM_EXPORT vtkDICOMCharacterSet
 {
 public:
   enum EnumType
@@ -60,6 +60,7 @@ public:
     Unknown    = 255  // signifies unknown character set
   };
 
+  //@{
   //! Construct an object that describes the default (ASCII) character set.
   vtkDICOMCharacterSet() : Key(0) {}
 
@@ -80,23 +81,29 @@ public:
     this->Key = KeyFromString(name.data(), name.length()); }
   vtkDICOMCharacterSet(const char *name, size_t nl) {
     this->Key = KeyFromString(name, nl); }
+  //@}
 
-  //! Generate a SpecificCharacterSet value.
+  //@{
+  //! Generate SpecificCharacterSet code values (diagnostic only).
   /*!
-   *  The result is given as a set of backslash-separated values if more
-   *  than one encoding is present.  The first value may be empty to indicate
-   *  that it is ASCII.  Since this class uses an unsigned char for storage,
-   *  the only secondary and tertiary values that can be represented are the
-   *  three multi-byte ISO 2022 character sets.  Therefore, if the condition
-   *  "if ((GetKey() & ISO_2022_OTHER) != 0)" is true, then the string
-   *  returned by this method will be incomplete and only the first character
-   *  set will be listed.
+   *  Attempt to generate SpecificCharacterSet code values.  If ISO 2022
+   *  encoding is not used, then a single code value is returned.  If
+   *  ISO 2022 encoding is used with the single-byte character sets, then
+   *  only the code value for first character set will be returned (due to
+   *  limitations in the way this class stores the information).  A simple
+   *  way to check whether such incomplete information will be returned is
+   *  to check if "((GetKey() & ISO_2022) == ISO_2022)" is true.  However,
+   *  if ISO 2022 encoding is used with one or more multi-byte character
+   *  sets, the result is a set of backslash-separated code values, where
+   *  the first value will be empty if the initial coding is ASCII.
    */
   std::string GetCharacterSetString() const;
 
   //! Get the numerical code for this character set object.
   unsigned char GetKey() const { return this->Key; }
+  //@}
 
+  //@{
   //! Convert text from this encoding to UTF-8.
   /*!
    *  This will convert text to UTF-8, which is generally a lossless
@@ -127,7 +134,9 @@ public:
    */
   bool IsBiDirectional() const {
     return (this->Key == ISO_IR_127 || this->Key == ISO_IR_138); }
+  //@}
 
+  //@{
   //! Count the number of backslashes in an encoded string.
   /*!
    *  The backslash byte is sometimes present as half of a multibyte
@@ -142,13 +151,16 @@ public:
    *  either at the beginning of the string or just after a backslash.
    */
   size_t NextBackslash(const char *text, const char *end) const;
+  //@}
 
+  //@{
   bool operator==(vtkDICOMCharacterSet b) const { return (this->Key == b.Key); }
   bool operator!=(vtkDICOMCharacterSet b) const { return (this->Key != b.Key); }
   bool operator<=(vtkDICOMCharacterSet a) const { return (this->Key <= a.Key); }
   bool operator>=(vtkDICOMCharacterSet a) const { return (this->Key >= a.Key); }
   bool operator<(vtkDICOMCharacterSet a) const { return (this->Key < a.Key); }
   bool operator>(vtkDICOMCharacterSet a) const { return (this->Key > a.Key); }
+  //@}
 
 private:
   static unsigned char KeyFromString(const char *name, size_t nl);
@@ -156,6 +168,7 @@ private:
   unsigned char Key;
 };
 
-VTK_DICOM_EXPORT ostream& operator<<(ostream& o, const vtkDICOMCharacterSet& a);
+VTKDICOM_EXPORT ostream& operator<<(ostream& o, const vtkDICOMCharacterSet& a);
 
 #endif /* vtkDICOMCharacterSet_h */
+// VTK-HeaderTest-Exclude: vtkDICOMCharacterSet.h

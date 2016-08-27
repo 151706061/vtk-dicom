@@ -15,7 +15,7 @@
 #define vtkDICOMFile_h
 
 #include <vtkSystemIncludes.h>
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 #if defined(_WIN32)
 #define VTK_DICOM_WIN32_IO
@@ -29,7 +29,7 @@
  *  It uses system-level I/O calls so that it can eventually be used not
  *  only on files, but on sockets as well.
  */
-class VTK_DICOM_EXPORT vtkDICOMFile
+class VTKDICOM_EXPORT vtkDICOMFile
 {
 public:
   //! The file mode (input or output).
@@ -43,10 +43,10 @@ public:
   enum Code
   {
     Good,              // no error
-    Bad,               // unspecified error
+    UnknownError,      // unspecified error
     AccessDenied,      // file permission error
-    IsDirectory,       // can't open file: directory with that name exists
-    DirectoryNotFound, // one of the directories in the path doesn't exist
+    FileIsDirectory,   // can't open file: directory with that name exists
+    ImpossiblePath,    // part of the path doesn't exist or goes through a file
     FileNotFound,      // requested file (or directory) doesn't exist
     OutOfSpace         // disk full or quota exceeded
   };
@@ -54,6 +54,7 @@ public:
   //! Typedef for a file size.
   typedef unsigned long long Size;
 
+  //@{
   //! Construct the file object.
   /*!
    *  The Mode can be "In" or "Out" (read or write).
@@ -62,7 +63,9 @@ public:
 
   //! Destruct the object and close the file.
   ~vtkDICOMFile();
+  //@}
 
+  //@{
   //! Close a file.
   void Close();
 
@@ -94,6 +97,16 @@ public:
 
   //! Return an error indicator (zero if no error).
   int GetError() { return this->Error; }
+  //@}
+
+  //@{
+  //! Test the specified file for accessibility (static method).
+  /*!
+   *  The mode should be "In" or "Out" to indicate how you intend to use
+   *  the file.  The return value will be zero (for an ordinary file) or
+   *  one of the codes returned by GetError.
+   */
+  static int Access(const char *filename, Mode mode);
 
   //! Delete the specified file (static method).
   /*!
@@ -102,6 +115,16 @@ public:
    *  open, in which case the file will be deleted when closed.
    */
   static int Remove(const char *filename);
+
+  //! Check if two files are the same.
+  /*!
+   *  This does not check that the filenames are the same.  Instead,
+   *  it checks to see if the two filenames point to the same actual
+   *  disk file.  If either file does not exist or is otherwise not
+   *  accessible, then it returns false.
+   */
+  static bool SameFile(const char *file1, const char *file2);
+  //@}
 
 private:
 #ifdef VTK_DICOM_POSIX_IO
@@ -114,3 +137,4 @@ private:
 };
 
 #endif /* vtkDICOMFile_h */
+// VTK-HeaderTest-Exclude: vtkDICOMFile.h

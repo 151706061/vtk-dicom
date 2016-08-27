@@ -29,12 +29,16 @@
 #include "vtkStringArray.h"
 #include "vtkVersion.h"
 
-#include "vtksys/SystemTools.hxx"
-#include "vtksys/ios/sstream"
+#ifdef _WIN32
+// To allow use of wchar_t paths on Windows
+#include "vtkDICOMFilePath.h"
+#endif
+#include "vtkDICOMFile.h"
 
 // Header for NIFTI
 #include "vtkNIFTIHeader.h"
 #include "vtkNIFTIPrivate.h"
+#include "vtkDICOMConfig.h"
 
 // Header for zlib
 #ifdef DICOM_USE_VTKZLIB
@@ -46,6 +50,17 @@
 #include <ctype.h>
 #include <string.h>
 #include <string>
+
+#ifdef _WIN32
+// To allow use of wchar_t paths on Windows
+#include "vtkDICOMFilePath.h"
+#if VTK_MAJOR_VERSION >= 7
+#ifdef gzopen
+#undef gzopen
+#endif
+#define gzopen gzopen_w
+#endif
+#endif
 
 vtkStandardNewMacro(vtkNIFTIReader);
 
@@ -67,6 +82,7 @@ vtkNIFTIReader::vtkNIFTIReader()
   this->QFormMatrix = 0;
   this->SFormMatrix = 0;
   this->NIFTIHeader = 0;
+  this->PlanarRGB = false;
 }
 
 //----------------------------------------------------------------------------
@@ -226,6 +242,7 @@ void vtkNIFTIReader::PrintSelf(ostream& os, vtkIndent indent)
     }
 
   os << indent << "NIFTIHeader:" << (this->NIFTIHeader ? "\n" : " (none)\n");
+  os << indent << "PlanarRGB: " << (this->PlanarRGB ? "On\n" : "Off\n");
 }
 
 //----------------------------------------------------------------------------
@@ -294,7 +311,8 @@ char *vtkNIFTIReader::ReplaceExtension(
     // existence of file
     for (int i = 0; i < 2; i++)
       {
-      if (vtksys::SystemTools::FileExists(newname))
+      int code = vtkDICOMFile::Access(newname, vtkDICOMFile::In);
+      if (code != vtkDICOMFile::FileNotFound)
         {
         return newname;
         }
@@ -383,8 +401,22 @@ int vtkNIFTIReader::CanReadFile(const char *filename)
     return 0;
     }
 
+#if _WIN32 
+  vtkDICOMFilePath fp(hdrname);
+#if VTK_MAJOR_VERSION < 7
+  // convert to the local character set
+  const char *uhdrname = fp.Local();
+#else
+  // use wide character
+  const wchar_t *uhdrname = fp.Wide();
+  fprintf(stderr, "uhdrname\n");
+#endif
+#else
+  const char *uhdrname = hdrname;
+#endif
+
   // try opening file
-  gzFile file = gzopen(hdrname, "rb");
+  gzFile file = gzopen(uhdrname, "rb");
 
   delete [] hdrname;
 
@@ -492,8 +524,25 @@ int vtkNIFTIReader::RequestInformation(
 
   vtkDebugMacro("Opening NIFTI file " << hdrname);
 
+#if _WIN32 
+  vtkDICOMFilePath fph(hdrname);
+#if VTK_MAJOR_VERSION < 7
+  // convert to the local character set
+  const char *uhdrname = fph.Local();
+#else
+  // use wide character
+  const wchar_t *uhdrname = fph.Wide();
+#endif
+#else
+  const char *uhdrname = hdrname;
+#endif
+
   // try opening file
-  gzFile file = gzopen(hdrname, "rb");
+  gzFile file = 0;
+  if (uhdrname)
+    {
+    file = gzopen(uhdrname, "rb");
+    }
 
   if (!file)
     {
@@ -1141,7 +1190,25 @@ int vtkNIFTIReader::RequestData(
   unsigned char *dataPtr =
     static_cast<unsigned char *>(data->GetScalarPointer());
 
-  gzFile file = gzopen(imgname, "rb");
+#if _WIN32 
+  vtkDICOMFilePath fpi(imgname);
+#if VTK_MAJOR_VERSION < 7
+  // convert to the local character set
+  const char *uimgname = fpi.Local();
+#else
+  // use wide character
+  const wchar_t *uimgname = fpi.Wide();
+  fprintf(stderr, "uhdrname\n");
+#endif
+#else
+  const char *uimgname = imgname;
+#endif
+
+  gzFile file = 0;
+  if (uimgname)
+    {
+    file = gzopen(uimgname, "rb");
+    }
 
   delete [] imgname;
 
@@ -1149,6 +1216,11 @@ int vtkNIFTIReader::RequestData(
     {
     return 0;
     }
+
+  // check if planar RGB is applicable (Analyze only)
+  bool planarRGB = (this->PlanarRGB &&
+                    (this->NIFTIHeader->GetDataType() == NIFTI_TYPE_RGB24 ||
+                     this->NIFTIHeader->GetDataType() == NIFTI_TYPE_RGBA32));
 
   int swapBytes = this->GetSwapBytes();
   int scalarSize = data->GetScalarSize();
@@ -1166,6 +1238,7 @@ int vtkNIFTIReader::RequestData(
 
   z_off_t fileVoxelIncr = scalarSize*numComponents/vectorDim;
   z_off_t fileRowIncr = fileVoxelIncr*this->Dim[1];
+  z_off_t filePlaneIncr = fileRowIncr*this->Dim[2];
   z_off_t fileSliceIncr = fileRowIncr*this->Dim[2];
   z_off_t fileTimeIncr = fileSliceIncr*this->Dim[3];
   z_off_t fileVectorIncr = fileTimeIncr*this->Dim[4];
@@ -1174,9 +1247,19 @@ int vtkNIFTIReader::RequestData(
     fileVectorIncr = fileTimeIncr;
     }
 
+  // planar RGB requires different increments
+  int planarSize = 1; // if > 1, indicates planar RGB
+  if (planarRGB)
+    {
+    planarSize = numComponents/vectorDim;
+    fileVoxelIncr = scalarSize;
+    fileRowIncr = fileVoxelIncr*this->Dim[1];
+    filePlaneIncr = fileRowIncr*this->Dim[2];
+    }
+
   // add a buffer for planar-vector to packed-vector conversion
   unsigned char *rowBuffer = 0;
-  if (vectorDim > 1)
+  if (vectorDim > 1 || planarRGB)
     {
     rowBuffer = new unsigned char[outSizeX*fileVoxelIncr];
     }
@@ -1193,11 +1276,23 @@ int vtkNIFTIReader::RequestData(
     dataPtr += sliceOffset*(outSizeZ - 1);
     }
 
+  // special increment to handle planar RGB
+  vtkIdType planarOffset = 0;
+  vtkIdType planarEndOffset = 0;
+  if (planarRGB)
+    {
+    planarOffset = scalarSize*numComponents;
+    planarOffset *= outSizeX;
+    planarOffset *= outSizeY;
+    planarOffset -= scalarSize;
+    planarEndOffset = planarOffset - scalarSize*(planarSize - 1);
+    }
+
   // report progress every 2% of the way to completion
   this->InvokeEvent(vtkCommand::StartEvent);
   this->UpdateProgress(0.0);
   vtkIdType target =
-    static_cast<vtkIdType>(0.02*outSizeY*outSizeZ*vectorDim) + 1;
+    static_cast<vtkIdType>(0.02*planarSize*outSizeY*outSizeZ*vectorDim) + 1;
   vtkIdType count = 0;
 
   // seek to the start of the data
@@ -1208,10 +1303,11 @@ int vtkNIFTIReader::RequestData(
 
   // read the data one row at a time, do planar-to-packed conversion
   // of vector components if NIFTI file has a vector dimension
-  int rowSize = numComponents/vectorDim*outSizeX;
+  int rowSize = fileVoxelIncr/scalarSize*outSizeX;
   int t = 0; // counter for time
   int c = 0; // counter for vector components
   int j = 0; // counter for rows
+  int p = 0; // counter for planes (planar RGB)
   int k = 0; // counter for slices
   unsigned char *ptr = dataPtr;
 
@@ -1233,7 +1329,7 @@ int vtkNIFTIReader::RequestData(
         }
       }
 
-    if (vectorDim == 1)
+    if (vectorDim == 1 && !planarRGB)
       {
       // read directly into the output instead of into a buffer
       rowBuffer = ptr;
@@ -1255,7 +1351,7 @@ int vtkNIFTIReader::RequestData(
       vtkByteSwap::SwapVoidRange(rowBuffer, rowSize, scalarSize);
       }
 
-    if (vectorDim == 1)
+    if (vectorDim == 1 && !planarRGB)
       {
       // advance the pointer to the next row
       ptr += outSizeX*numComponents*scalarSize;
@@ -1287,36 +1383,44 @@ int vtkNIFTIReader::RequestData(
     if (++j == outSizeY)
       {
       j = 0;
-      offset += fileSliceIncr - outSizeY*fileRowIncr;
-      ptr -= 2*sliceOffset; // for reverse slice order
-      if (++k == outSizeZ)
+      offset += filePlaneIncr - outSizeY*fileRowIncr;
+      // back up for next plane (R, G, or B) if planar mode
+      ptr -= planarOffset;
+      if (++p == planarSize)
         {
-        k = 0;
-        offset += fileVectorIncr - outSizeZ*fileSliceIncr;
-        if (++t == timeDim)
+        p = 0;
+        ptr += planarEndOffset; // advance to start of next slice
+        ptr -= 2*sliceOffset; // for reverse slice order
+        if (++k == outSizeZ)
           {
-          t = 0;
-          }
-        if (++c == vectorDim)
-          {
-          break;
-          }
-        // back up the ptr to the beginning of the image,
-        // then increment to the next vector component
-        ptr = dataPtr + c*fileVoxelIncr;
+          k = 0;
+          offset += fileVectorIncr - outSizeZ*fileSliceIncr;
+          if (++t == timeDim)
+            {
+            t = 0;
+            }
+          if (++c == vectorDim)
+            {
+            break;
+            }
+          // back up the ptr to the beginning of the image,
+          // then increment to the next vector component
+          ptr = dataPtr + c*fileVoxelIncr*planarSize;
 
-        if (this->TimeAsVector)
-          {
-          // if timeDim is included in the vectorDim (and hence in the
-          // VTK scalar components) then we have to make sure that
-          // the vector components are packed before the time steps
-          ptr = dataPtr + (c + t*(vectorDim - 1))/timeDim*fileVoxelIncr;
+          if (this->TimeAsVector)
+            {
+            // if timeDim is included in the vectorDim (and hence in the
+            // VTK scalar components) then we have to make sure that
+            // the vector components are packed before the time steps
+            ptr = dataPtr + (c + t*(vectorDim - 1))/timeDim*
+                            fileVoxelIncr*planarSize;
+            }
           }
         }
       }
     }
 
-  if (vectorDim > 1)
+  if (vectorDim > 1 || planarRGB)
     {
     delete [] rowBuffer;
     }

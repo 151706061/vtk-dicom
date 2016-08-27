@@ -14,7 +14,7 @@
 #ifndef vtkDICOMCTGenerator_h
 #define vtkDICOMCTGenerator_h
 
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 #include "vtkDICOMGenerator.h"
 
 //! Generate DICOM data objects for CT images.
@@ -25,7 +25,7 @@
  *  The specific IOD classes supported are as follows:
  *  - CT Image, 1.2.840.10008.5.1.4.1.1.2
  */
-class VTK_DICOM_EXPORT vtkDICOMCTGenerator : public vtkDICOMGenerator
+class VTKDICOM_EXPORT vtkDICOMCTGenerator : public vtkDICOMGenerator
 {
 public:
   //! Static method for construction.

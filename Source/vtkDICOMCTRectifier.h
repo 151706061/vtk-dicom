@@ -21,12 +21,12 @@
 #define vtkDICOMCTRectifier_h
 
 #include "vtkDICOMAlgorithm.h"
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 class vtkMatrix4x4;
 
 //----------------------------------------------------------------------------
-class VTK_DICOM_EXPORT vtkDICOMCTRectifier : public vtkDICOMAlgorithm
+class VTKDICOM_EXPORT vtkDICOMCTRectifier : public vtkDICOMAlgorithm
 {
 public:
   // Description:

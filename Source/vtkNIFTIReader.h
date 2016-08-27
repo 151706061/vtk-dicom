@@ -33,7 +33,7 @@
 #define vtkNIFTIReader_h
 
 #include <vtkImageReader2.h>
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 class vtkNIFTIHeader;
 class vtkMatrix4x4;
@@ -41,7 +41,7 @@ class vtkMatrix4x4;
 struct nifti_1_header;
 
 //----------------------------------------------------------------------------
-class VTK_DICOM_EXPORT vtkNIFTIReader : public vtkImageReader2
+class VTKDICOM_EXPORT vtkNIFTIReader : public vtkImageReader2
 {
 public:
   // Description:
@@ -90,6 +90,16 @@ public:
   // scl_inter fields in the NIFTI header.
   double GetRescaleSlope() { return this->RescaleSlope; }
   double GetRescaleIntercept() { return this->RescaleIntercept; }
+
+  // Description:
+  // Read planar RGB (separate R, G, and B planes), rather than packed RGB.
+  // The NIFTI format should always use packed RGB.  The Analyze format,
+  // however, was used to store both planar RGB and packed RGB depending
+  // on the software, without any indication in the header about which
+  // convention was being used.  Use this if you have a planar RGB file.
+  vtkGetMacro(PlanarRGB, bool);
+  vtkSetMacro(PlanarRGB, bool);
+  vtkBooleanMacro(PlanarRGB, bool);
 
   // Description:
   // QFac gives the slice order in the NIFTI file versus the VTK image.
@@ -203,6 +213,10 @@ protected:
   // Description:
   // A copy of the header from the file that was most recently read.
   vtkNIFTIHeader *NIFTIHeader;
+
+  // Description:
+  // Use planar RGB instead of the default (packed).
+  bool PlanarRGB;
 
 private:
   vtkNIFTIReader(const vtkNIFTIReader&);  // Not implemented.

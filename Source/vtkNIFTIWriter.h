@@ -31,12 +31,12 @@
 #define vtkNIFTIWriter_h
 
 #include <vtkImageWriter.h>
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 class vtkMatrix4x4;
 class vtkNIFTIHeader;
 
-class VTK_DICOM_EXPORT vtkNIFTIWriter : public vtkImageWriter
+class VTKDICOM_EXPORT vtkNIFTIWriter : public vtkImageWriter
 {
 public:
   // Description:
@@ -58,7 +58,6 @@ public:
 
   // Description:
   // Set a short description (max 80 chars) of how the file was produced.
-  // The default description is "VTKX.Y" where X.Y is the VTK version.
   vtkSetStringMacro(Description);
   vtkGetStringMacro(Description);
 
@@ -83,6 +82,16 @@ public:
    vtkGetMacro(RescaleSlope, double);
    vtkSetMacro(RescaleIntercept, double);
    vtkGetMacro(RescaleIntercept, double);
+
+  // Description:
+  // Write planar RGB (separate R, G, and B planes), rather than packed RGB.
+  // Use this option with extreme caution: the NIFTI standard requires RGB
+  // pixels to be packed.  The Analyze format, however, was used to store
+  // both planar RGB and packed RGB depending on the software, without any
+  // indication in the header about which convention was being used.
+  vtkGetMacro(PlanarRGB, bool);
+  vtkSetMacro(PlanarRGB, bool);
+  vtkBooleanMacro(PlanarRGB, bool);
 
   // Description:
   // The QFac sets the ordering of the slices in the NIFTI file.
@@ -168,6 +177,10 @@ protected:
   vtkNIFTIHeader *NIFTIHeader;
   vtkNIFTIHeader *OwnHeader;
   int NIFTIVersion;
+
+  // Description:
+  // Use planar RGB instead of the default (packed).
+  bool PlanarRGB;
 
 private:
   vtkNIFTIWriter(const vtkNIFTIWriter&);  // Not implemented.

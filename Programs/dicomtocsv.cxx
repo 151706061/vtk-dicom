@@ -2,7 +2,7 @@
 
   Program: DICOM for VTK
 
-  Copyright (c) 2012-2015 David Gobbi
+  Copyright (c) 2012-2016 David Gobbi
   All rights reserved.
   See Copyright.txt or http://dgobbi.github.io/bsd3.txt for details.
 
@@ -12,6 +12,7 @@
 
 =========================================================================*/
 
+#include "vtkDICOMConfig.h"
 #include "vtkDICOMDirectory.h"
 #include "vtkDICOMMetaData.h"
 #include "vtkDICOMItem.h"
@@ -19,8 +20,10 @@
 #include "vtkDICOMParser.h"
 #include "vtkDICOMMetaData.h"
 #include "vtkDICOMMetaDataAdapter.h"
+#include "vtkDICOMFile.h"
 
 // from dicomcli
+#include "vtkConsoleOutputWindow.h"
 #include "mainmacro.h"
 #include "readquery.h"
 #include "progress.h"
@@ -35,7 +38,10 @@
 #include <stdlib.h>
 
 #include <limits>
-#include <iostream>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -44,7 +50,7 @@ void dicomtocsv_version(FILE *file, const char *cp)
 {
   fprintf(file, "%s %s\n", cp, DICOM_VERSION);
   fprintf(file, "\n"
-    "Copyright (c) 2012-2015, David Gobbi.\n\n"
+    "Copyright (c) 2012-2016, David Gobbi.\n\n"
     "This software is distributed under an open-source license.  See the\n"
     "Copyright.txt file that comes with the vtk-dicom source distribution.\n");
 }
@@ -57,6 +63,7 @@ void dicomtocsv_usage(FILE *file, const char *cp)
   fprintf(file, "options:\n"
     "  -k tag=value     Provide a key to be queried and matched.\n"
     "  -q <query.txt>   Provide a file to describe the find query.\n"
+    "  -u <uids.txt>    Provide a file that contains a list of UIDs.\n"
     "  -o <data.csv>    Provide a file for the query results.\n"
     "  --first-nonzero  Search series for first nonzero value of each key.\n"
     "  --directory-only Use directory scan only, do not re-scan files.\n"
@@ -82,7 +89,17 @@ void dicomtocsv_help(FILE *file, const char *cp)
     "Attributes nested within sequences can be specified by giving a tag\n"
     "path e.g. \"-k Tag1/Tag2/Tag3\".  Either a forward slash or a backslash\n"
     "can be used to separate the components of the path.  Private tags\n"
-    "should be preceded by the private dictionary name in square brackets.\n\n");
+    "should be preceded by the private dictionary name in square brackets.\n"
+    "\n"
+    "If the same tag is given more than once with \"-k\" (or if the tag is\n"
+    "listed multiple times in the query file, or appears in both the query\n"
+    "file and as a \"-k\" option), then its first appearance will set the\n"
+    "column number that it appears in.  Also, with regards to the search,\n"
+    "the value specified in the final appearance of the tag as an option\n"
+    "will be the value used for the search.\n"
+    "\n"
+    "If no attributes are specified with either \"-k\" or \"-q\", then a\n"
+    "default set of query attributes will be used.\n\n");
 }
 
 // remove path portion of filename
@@ -95,16 +112,130 @@ const char *dicomtocsv_basename(const char *filename)
 
 typedef vtkDICOMVR VR;
 
+// Create a default query for --image
+void dicomtocsv_image_default(vtkDICOMItem *query, QueryTagList *ql)
+{
+  // these are the attributes that must be part of the query
+  static const DC::EnumType defaultElements[] = {
+    // patient-level information
+    DC::PatientName,          // 2
+    DC::PatientID,            // 1
+    DC::PatientBirthDate,     // 3
+    DC::PatientSex,           // 3
+    // study-level information
+    DC::StudyDate,            // 1
+    DC::StudyTime,            // 1
+    DC::StudyID,              // 1
+    DC::AccessionNumber,      // 2
+    DC::StudyDescription,     // 2
+    DC::StudyInstanceUID,     // 1
+    // series-level information
+    DC::Modality,             // 1
+    DC::SeriesNumber,         // 1
+    DC::SeriesDescription,    // 3
+    DC::SeriesInstanceUID,    // 1
+    DC::Rows,                 // 3
+    DC::Columns,              // 3
+    // image-level information
+    DC::InstanceNumber,       // 1
+    DC::SOPClassUID,          // 1
+    DC::SOPInstanceUID,       // 1
+    DC::ReferencedFileID,     // special
+    // delimiter to mark end of list
+    DC::ItemDelimitationItem
+  };
+
+  for (const DC::EnumType *tagPtr = defaultElements;
+       *tagPtr != DC::ItemDelimitationItem;
+       ++tagPtr)
+    {
+    VR vr = query->FindDictVR(*tagPtr);
+    query->SetAttributeValue(*tagPtr, vtkDICOMValue(vr));
+    ql->push_back(vtkDICOMTagPath(*tagPtr));
+    }
+}
+
+// Create a default query for --series
+void dicomtocsv_series_default(vtkDICOMItem *query, QueryTagList *ql)
+{
+  // these are the attributes that must be part of the query
+  static const DC::EnumType defaultElements[] = {
+    // patient-level information
+    DC::PatientName,          // 2
+    DC::PatientID,            // 1
+    DC::PatientBirthDate,     // 3
+    DC::PatientSex,           // 3
+    // study-level information
+    DC::StudyDate,            // 1
+    DC::StudyTime,            // 1
+    DC::StudyID,              // 1
+    DC::AccessionNumber,      // 2
+    DC::StudyDescription,     // 2
+    DC::StudyInstanceUID,     // 1
+    // series-level information
+    DC::Modality,             // 1
+    DC::SeriesNumber,         // 1
+    DC::SeriesDescription,    // 3
+    DC::SeriesInstanceUID,    // 1
+    DC::Rows,                 // 3
+    DC::Columns,              // 3
+    DC::NumberOfReferences,   // special
+    // delimiter to mark end of list
+    DC::ItemDelimitationItem
+  };
+
+  for (const DC::EnumType *tagPtr = defaultElements;
+       *tagPtr != DC::ItemDelimitationItem;
+       ++tagPtr)
+    {
+    VR vr = query->FindDictVR(*tagPtr);
+    query->SetAttributeValue(*tagPtr, vtkDICOMValue(vr));
+    ql->push_back(vtkDICOMTagPath(*tagPtr));
+    }
+}
+
+// Create a default query for --study
+void dicomtocsv_study_default(vtkDICOMItem *query, QueryTagList *ql)
+{
+  // these are the attributes that must be part of the query
+  static const DC::EnumType defaultElements[] = {
+    // patient-level information
+    DC::PatientName,          // 2
+    DC::PatientID,            // 1
+    DC::PatientBirthDate,     // 3
+    DC::PatientSex,           // 3
+    // study-level information
+    DC::StudyDate,            // 1
+    DC::StudyTime,            // 1
+    DC::StudyID,              // 1
+    DC::AccessionNumber,      // 2
+    DC::StudyDescription,     // 2
+    DC::StudyInstanceUID,     // 1
+    DC::NumberOfReferences,   // special
+    // delimiter to mark end of list
+    DC::ItemDelimitationItem
+  };
+
+  for (const DC::EnumType *tagPtr = defaultElements;
+       *tagPtr != DC::ItemDelimitationItem;
+       ++tagPtr)
+    {
+    VR vr = query->FindDictVR(*tagPtr);
+    query->SetAttributeValue(*tagPtr, vtkDICOMValue(vr));
+    ql->push_back(vtkDICOMTagPath(*tagPtr));
+    }
+}
+
 // Write the header for a csv file
 void dicomtocsv_writeheader(
-  const vtkDICOMItem& query, const QueryTagList *ql, std::ostream& os)
+  const vtkDICOMItem& query, const QueryTagList *ql, FILE *fp)
 {
   // print human-readable names for each tag
   for (size_t i = 0; i < ql->size(); i++)
     {
     if (i != 0)
       {
-      os << ",";
+      fprintf(fp, "%s", ",");
       }
     const vtkDICOMItem *pitem = &query;
     vtkDICOMTagPath tagPath = ql->at(i);
@@ -114,7 +245,7 @@ void dicomtocsv_writeheader(
       vtkDICOMDictEntry e = pitem->FindDictEntry(tag);
       if (e.IsValid())
         {
-        os << e.GetName();
+        fprintf(fp, "%s", e.GetName());
         }
       if (!tagPath.HasTail())
         {
@@ -122,10 +253,10 @@ void dicomtocsv_writeheader(
         }
       pitem = pitem->GetAttributeValue(tag).GetSequenceData();
       tagPath = tagPath.GetTail();
-      os << "\\";
+      fprintf(fp, "%s", "\\");
       }
     }
-  os << "\r\n";
+  fprintf(fp, "%s", "\r\n");
 }
 
 // Convert date to format YYYY-MM-DD HH:MM:SS
@@ -176,7 +307,7 @@ std::string dicomtocsv_quote(const std::string& s)
 
 // Write out the results in csv format
 void dicomtocsv_write(vtkDICOMDirectory *finder,
-  const vtkDICOMItem& query, const QueryTagList *ql, std::ostream& os,
+  const vtkDICOMItem& query, const QueryTagList *ql, FILE *fp,
   int level, bool firstNonZero, bool useDirectoryRecords, vtkCommand *p)
 {
   // for keeping track of progress
@@ -252,9 +383,6 @@ void dicomtocsv_write(vtkDICOMDirectory *finder,
           }
         }
 
-      // create an adapter, in case of enhanced IOD
-      vtkDICOMMetaDataAdapter adapter(meta);
-
       // this loop is only for the "image" level
       int m = (level >= 4 ? meta->GetNumberOfInstances() : 1);
       for (int jj = 0; jj < m; jj++)
@@ -264,7 +392,7 @@ void dicomtocsv_write(vtkDICOMDirectory *finder,
           {
           if (i != 0)
             {
-            os << ",";
+            fprintf(fp, "%s", ",");
             }
 
           const vtkDICOMItem *qitem = &query;
@@ -277,6 +405,10 @@ void dicomtocsv_write(vtkDICOMDirectory *finder,
           n = (level >= 4 ? jj+1 : n);
           for (int ii = jj; ii < n; ii++)
             {
+            // Create an adapter, which helps with extracting attributes from
+            // the PerFrameFunctionalSequence of enhanced IODs.
+            vtkDICOMMetaDataAdapter adapter(meta, ii);
+
             for (;;)
               {
               vtkDICOMTag tag = tagPath.GetHead();
@@ -298,21 +430,31 @@ void dicomtocsv_write(vtkDICOMDirectory *finder,
                 {
                 vp = &mitem->GetAttributeValue(tag);
                 }
+              else if (tag != DC::NumberOfFrames)
+                {
+                // vtkDICOMMetaDataAdapter hides NumberOfFrames, so it
+                // will never be found if we check the adapter
+                vp = &adapter->GetAttributeValue(tag);
+                }
               else
                 {
-                vp = &adapter->GetAttributeValue(ii, tag);
+                vp = &meta->GetAttributeValue(ii, tag);
                 }
               if (vp && !vp->IsValid())
                 {
                 vp = 0;
                 }
+              // break if we have reached the end of a tag path
               if (vp == 0 || !tagPath.HasTail())
                 {
                 break;
                 }
+              // go one level deeper into the query
               qitem = qitem->GetAttributeValue(
                 tagPath.GetHead()).GetSequenceData();
+              // go one level deeper along the tag path
               tagPath = tagPath.GetTail();
+              // go one level deeper into the meta data
               mitem = vp->GetSequenceData();
               if (mitem == 0 || vp->GetNumberOfValues() == 0)
                 {
@@ -341,13 +483,15 @@ void dicomtocsv_write(vtkDICOMDirectory *finder,
                  v.GetVR() == VR::FL ||
                  v.GetVR() == VR::FD))
               {
-              os << v;
+              std::string s = v.AsString();
+              fprintf(fp, "%s", s.c_str());
               }
             else if (v.GetVR() == VR::DA ||
                      v.GetVR() == VR::TM ||
                      v.GetVR() == VR::DT)
               {
-              os << "\"" << dicomtocsv_date(v.AsString(), v.GetVR()) << "\"";
+              std::string s = dicomtocsv_date(v.AsString(), v.GetVR());
+              fprintf(fp, "\"%s\"", s.c_str());
               }
             else if (v.GetVR() == VR::SQ)
               {
@@ -355,7 +499,8 @@ void dicomtocsv_write(vtkDICOMDirectory *finder,
               }
             else if (v.GetVL() != 0 && v.GetVL() != 0xFFFFFFFF)
               {
-              os << "\"" << dicomtocsv_quote(v.AsUTF8String()) << "\"";
+              std::string s = dicomtocsv_quote(v.AsUTF8String());
+              fprintf(fp, "\"%s\"", s.c_str());
               }
             }
           else if (tagPath.GetHead() == DC::ReferencedFileID &&
@@ -363,7 +508,8 @@ void dicomtocsv_write(vtkDICOMDirectory *finder,
             {
             // ReferencedFileID (0004,1500) is meant to be used in DICOMDIR,
             // but we hijack it to report the first file in the series.
-            os << "\"" << dicomtocsv_quote(a->GetValue(jj)) << "\"";
+            std::string s = dicomtocsv_quote(a->GetValue(jj));
+            fprintf(fp, "\"%s\"", s.c_str());
             }
           else if (tagPath.GetHead() == DC::NumberOfReferences &&
                    !tagPath.HasTail())
@@ -372,11 +518,11 @@ void dicomtocsv_write(vtkDICOMDirectory *finder,
             // to count the number of references to a file, but we hijack
             // it and use it to report the number of files found for the
             // series.
-            os << "\"" << numberOfFiles << "\"";
+            fprintf(fp, "\"%d\"", numberOfFiles);
             }
           }
 
-        os << "\r\n";
+        fprintf(fp, "%s", "\r\n");
 
         // report progress
         if (p)
@@ -399,8 +545,11 @@ void dicomtocsv_write(vtkDICOMDirectory *finder,
 } // end anonymous namespace
 
 // This program will dump all the metadata in the given file
-MAINMACRO(argc, argv)
+int MAINMACRO(int argc, char *argv[])
 {
+  // redirect all VTK errors to stderr
+  vtkConsoleOutputWindow::Install();
+
   int rval = 0;
   int scandepth = std::numeric_limits<int>::max();
   QueryTagList qtlist;
@@ -413,6 +562,9 @@ MAINMACRO(argc, argv)
 
   vtkSmartPointer<vtkStringArray> a = vtkSmartPointer<vtkStringArray>::New();
   const char *ofile = 0;
+
+  // always query SpecificCharacterSet
+  query.SetAttributeValue(DC::SpecificCharacterSet, vtkDICOMValue(VR::CS));
 
   // always query the functional sequences for advanced files
   query.SetAttributeValue(
@@ -443,7 +595,7 @@ MAINMACRO(argc, argv)
       {
       if (argi + 1 == argc || argv[argi+1][0] == '-')
         {
-        fprintf(stderr, "%s must be followed by a file.\n\n", arg);
+        fprintf(stderr, "Error: %s must be followed by a file.\n\n", arg);
         dicomtocsv_usage(stderr, dicomtocsv_basename(argv[0]));
         return 1;
         }
@@ -453,7 +605,7 @@ MAINMACRO(argc, argv)
         const char *qfile = argv[++argi];
         if (!dicomcli_readquery(qfile, &query, &qtlist))
           {
-          fprintf(stderr, "Can't read query file %s\n\n", qfile);
+          fprintf(stderr, "Error: Can't read query file %s\n\n", qfile);
           return 1;
           }
         }
@@ -462,13 +614,28 @@ MAINMACRO(argc, argv)
         ofile = argv[++argi];
         }
       }
+    else if (strcmp(arg, "-u") == 0)
+      {
+      if (argi + 1 == argc || argv[argi+1][0] == '-')
+        {
+        fprintf(stderr, "Error: %s must be followed by a file.\n\n", arg);
+        dicomtocsv_usage(stderr, dicomtocsv_basename(argv[0]));
+        return 1;
+        }
+      const char *qfile = argv[++argi];
+      if (!dicomcli_readuids(qfile, &query, &qtlist))
+        {
+        fprintf(stderr, "Error: Can't read uid file %s\n\n", qfile);
+        return 1;
+        }
+      }
     else if (strcmp(arg, "-k") == 0)
       {
       vtkDICOMTag tag;
       ++argi;
       if (argi == argc)
         {
-        fprintf(stderr, "%s must be followed by gggg,eeee=value "
+        fprintf(stderr, "Error: %s must be followed by gggg,eeee=value "
                         "where gggg,eeee is a DICOM tag.\n\n", arg);
         return 1;
         }
@@ -503,32 +670,58 @@ MAINMACRO(argc, argv)
       }
     else if (arg[0] == '-')
       {
-      fprintf(stderr, "unrecognized option %s.\n\n", arg);
+      fprintf(stderr, "Error: Unrecognized option %s.\n\n", arg);
       dicomtocsv_usage(stderr, dicomtocsv_basename(argv[0]));
       return 1;
       }
     else
       {
-      a->InsertNextValue(arg);
+      int code = vtkDICOMFile::Access(arg, vtkDICOMFile::In);
+      if (code == vtkDICOMFile::Good || code == vtkDICOMFile::FileIsDirectory)
+        {
+        a->InsertNextValue(arg);
+        }
+      else if (dicomcli_looks_like_key(arg))
+        {
+        fprintf(stderr, "Error: Missing -k before %s.\n\n", arg);
+        return 1;
+        }
+      else if (strlen(arg) > 4 &&
+               strcmp(&arg[strlen(arg) - 4], ".csv") == 0)
+        {
+        fprintf(stderr, "Error: Missing -o before %s.\n\n", arg);
+        return 1;
+        }
+      else
+        {
+        fprintf(stderr, "Error: File not found: %s.\n\n", arg);
+        return 1;
+        }
       }
     }
 
-  std::ostream *osp = &std::cout;
-  std::ofstream ofs;
+  FILE *fp = stdout;
+  FILE *fp1 = NULL;
 
   if (ofile)
     {
-    ofs.open(ofile,
-             std::ofstream::out |
-             std::ofstream::binary |
-             std::ofstream::trunc);
+#ifndef _WIN32
+    fp1 = fopen(ofile, "wb");
+#else
+    // use wide chars to avoid narrowing to local character set
+    int n = MultiByteToWideChar(CP_UTF8, 0, ofile, -1, NULL, 0);
+    wchar_t *wofile = new wchar_t[n];
+    MultiByteToWideChar(CP_UTF8, 0, ofile, -1, wofile, n);
+    fp1 = _wfopen(wofile, L"wb");
+    delete [] wofile;
+#endif
 
-    if (ofs.fail())
+    if (!fp1)
       {
-      fprintf(stderr, "Unable to open output file %s.\n", ofile);
+      fprintf(stderr, "Error: Unable to open output file %s.\n", ofile);
       return 1;
       }
-    osp = &ofs;
+    fp = fp1;
     }
   else
     {
@@ -536,9 +729,26 @@ MAINMACRO(argc, argv)
     silent = true;
     }
 
+  // If no query specified, then use a default one
+  if (qtlist.size() == 0)
+    {
+    if (level == 2)
+      {
+      dicomtocsv_study_default(&query, &qtlist);
+      }
+    else if (level == 3)
+      {
+      dicomtocsv_series_default(&query, &qtlist);
+      }
+    else if (level == 4)
+      {
+      dicomtocsv_image_default(&query, &qtlist);
+      }
+    }
+
   // Write the header
-  dicomtocsv_writeheader(query, &qtlist, *osp);
-  osp->flush();
+  dicomtocsv_writeheader(query, &qtlist, fp);
+  fflush(fp);
 
   // Write data for every input directory
   if (a->GetNumberOfTuples() > 0)
@@ -569,10 +779,15 @@ MAINMACRO(argc, argv)
       p->SetText("Writing");
       }
     dicomtocsv_write(
-      finder, query, &qtlist, *osp, level,
+      finder, query, &qtlist, fp, level,
       firstNonZero, useDirectoryRecords, p);
 
-    osp->flush();
+    fflush(fp);
+    }
+
+  if (fp1)
+    {
+    fclose(fp1);
     }
 
   return rval;

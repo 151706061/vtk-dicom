@@ -1091,10 +1091,10 @@ size_t Decoder<E>::ReadElementHead(
       {
       // invalid vr, try to get VR from dictionary instead
       vr = this->Context->FindDictVR(tag);
-      if (cp[-4] <= 0x20 || cp[-4] >= 0x7f ||
-          cp[-3] <= 0x20 || cp[-3] >= 0x7f)
+      if (cp[-4] < 0x20 || cp[-4] >= 0x7f ||
+          cp[-3] < 0x20 || cp[-3] >= 0x7f)
         {
-        // if VR is not a graphical character within the default character
+        // if VR is not a printable character within the default character
         // set, assume implicit encoding for this particular element
         implicit = true;
         vl = Decoder<E>::GetInt32(cp - 4);
@@ -1102,7 +1102,7 @@ size_t Decoder<E>::ReadElementHead(
       }
     if (!implicit && vr.HasLongVL())
       {
-      // for OB, OD, OF, OW, SQ, UC, UN, UR, UT
+      // for OB, OD, OF, OL, OW, SQ, UC, UN, UR, UT, and unrecognized
       // check that buffer has 4 bytes for 32-bit VL
       if (!this->CheckBuffer(cp, ep, 4))
         {
@@ -1468,6 +1468,7 @@ bool Decoder<E>::ReadElements(
       {
       // if it was explicitly labeled 'UN' then check dictionary
       vr = this->Context->FindDictVR(tag);
+      this->LastVR = vr; // save true VR, rather than recorded VR
       rl = this->ImplicitLE->ReadElementValue(cp, ep, vr, vl, v);
       }
     else
@@ -1588,8 +1589,8 @@ bool Decoder<E>::SkipElements(
           // invalid vr, try to get VR from dictionary instead
           vr = this->Context->FindDictVR(vtkDICOMTag(g,e));
           // check that vr was composed of reasonable chars
-          if (cp[-4] <= 0x20 || cp[-4] >= 0x7f ||
-              cp[-3] <= 0x20 || cp[-3] >= 0x7f)
+          if (cp[-4] < 0x20 || cp[-4] >= 0x7f ||
+              cp[-3] < 0x20 || cp[-3] >= 0x7f)
             {
             // assume an implicitly coded element slipped into the data
             implicit = true;
@@ -1816,7 +1817,7 @@ bool vtkDICOMParser::ReadFile(vtkDICOMMetaData *data, int idx)
       {
       errText = "No permission to read the file ";
       }
-    else if (infile.GetError() == vtkDICOMFile::IsDirectory)
+    else if (infile.GetError() == vtkDICOMFile::FileIsDirectory)
       {
       errText = "The selected file is a directory ";
       }

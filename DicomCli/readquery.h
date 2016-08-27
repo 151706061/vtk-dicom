@@ -36,4 +36,16 @@ bool dicomcli_readquery(
 bool dicomcli_readkey(
   const char *key, vtkDICOMItem *query, QueryTagList *ql=0);
 
+//! Check if text looks like a query key (for error checking).
+bool dicomcli_looks_like_key(const char *key);
+
+//! Read a UID file, return 'true' on success.
+/*!
+ *  The first line of the file must contain a valid key, for example
+ *  SeriesInstanceUID, and the remainder of the file should contain
+ *  values, one value per line, without quotes.
+ */
+bool dicomcli_readuids(
+  const char *fname, vtkDICOMItem *query, QueryTagList *ql=0);
+
 #endif /* readquery_h */

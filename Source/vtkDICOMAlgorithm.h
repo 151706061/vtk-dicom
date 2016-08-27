@@ -22,7 +22,7 @@
 #define vtkDICOMAlgorithm_h
 
 #include <vtkThreadedImageAlgorithm.h>
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 class vtkLookupTable;
 class vtkInformationDataObjectKey;
@@ -31,13 +31,14 @@ class vtkDICOMMetaData;
 class vtkDICOMPerFilePalette;
 
 //----------------------------------------------------------------------------
-class VTK_DICOM_EXPORT vtkDICOMAlgorithm : public vtkThreadedImageAlgorithm
+class VTKDICOM_EXPORT vtkDICOMAlgorithm : public vtkThreadedImageAlgorithm
 {
 public:
+  vtkTypeMacro(vtkDICOMAlgorithm, vtkThreadedImageAlgorithm);
+
   // Description:
   // Static method for construction.
   static vtkDICOMAlgorithm *New();
-  vtkTypeMacro(vtkDICOMAlgorithm, vtkThreadedImageAlgorithm);
 
   // Description:
   // Print information about this object.

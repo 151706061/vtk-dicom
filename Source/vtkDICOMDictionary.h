@@ -14,30 +14,32 @@
 #ifndef vtkDICOMDictionary_h
 #define vtkDICOMDictionary_h
 
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 #include "vtkDICOMDictEntry.h"
 #include "vtkDICOMDictHash.h"
 
 //! The size of the hash table for the dicom dictionary.
-#define DICT_HASH_TABLE_SIZE 1024
+#define DICT_HASH_TABLE_SIZE 4096
 #define DICT_PRIVATE_TABLE_SIZE 512
 
 //! Provide access to the DICOM tag dictionary.
-class VTK_DICOM_EXPORT vtkDICOMDictionary
+class VTKDICOM_EXPORT vtkDICOMDictionary
 {
 public:
+  //! A struct to store a DICOM dictionary hash table.
   struct Dict
   {
     const char *Name;
     unsigned short HashSize;
     unsigned short DataSize;
-    unsigned short *TagHashTable;
-    unsigned short *KeyHashTable;
-    vtkDICOMDictEntry::Entry *Contents;
+    const unsigned short *TagHashTable;
+    const unsigned short *KeyHashTable;
+    const vtkDICOMDictEntry::Entry *Contents;
   };
 
   struct DictHashEntry;
 
+  //@{
   //! Find the dictionary entry for the given tag.
   static vtkDICOMDictEntry FindDictEntry(const vtkDICOMTag tag) {
     return vtkDICOMDictionary::FindDictEntry(tag, 0); }
@@ -45,7 +47,9 @@ public:
   //! Find the dictionary for the given key.
   static vtkDICOMDictEntry FindDictEntry(const char *key) {
     return vtkDICOMDictionary::FindDictEntry(key, 0); }
+  //@}
 
+  //@{
   //! Include a private dictionary when searching for the tag.
   /*!
    *  This method requires that the creator of the private dictionary
@@ -66,7 +70,9 @@ public:
    */
   static vtkDICOMDictEntry FindDictEntry(
     const char *key, const char *privateDict);
+  //@}
 
+  //@{
   //! Add the hash table for a private dictionary.
   /*!
    *  The name should be the text that appears in the PrivateCreator
@@ -77,9 +83,10 @@ public:
 
   //! Remove a private dictionary.
   static void RemovePrivateDictionary(const char *name);
+  //@}
 
 private:
-  friend struct vtkDICOMDictionaryInitializer;
+  friend class vtkDICOMDictionaryInitializer;
 
   //! Compute a string hash for a DICOM text value.
   /*!
@@ -107,12 +114,18 @@ private:
  *  This ensures that the vtkDICOMDictionary module is initialized before
  *  any other module that includes this header file.
  */
-struct VTK_DICOM_EXPORT vtkDICOMDictionaryInitializer
+class VTKDICOM_EXPORT vtkDICOMDictionaryInitializer
 {
+public:
   vtkDICOMDictionaryInitializer();
   ~vtkDICOMDictionaryInitializer();
+private:
+  vtkDICOMDictionaryInitializer(const vtkDICOMDictionaryInitializer&);
+  vtkDICOMDictionaryInitializer& operator=(
+    const vtkDICOMDictionaryInitializer&);
 };
 
 static vtkDICOMDictionaryInitializer vtkDICOMDictionaryInitializerInstance;
 
 #endif /* vtkDICOMDictionary_h */
+// VTK-HeaderTest-Exclude: vtkDICOMDictionary.h

@@ -46,6 +46,18 @@ SourceApplicationEntityTitle
 AE
 1
 
+(0002,0017)
+Sending Application Entity Title
+SendingApplicationEntityTitle
+AE
+1
+
+(0002,0018)
+Receiving Application Entity Title
+ReceivingApplicationEntityTitle
+AE
+1
+
 (0002,0100)
 Private Information Creator UID
 PrivateInformationCreatorUID
@@ -376,6 +388,12 @@ RetrieveAETitle
 AE
 1-n
 
+(0008,0055)
+Station AE Title
+StationAETitle
+AE
+1
+
 (0008,0056)
 Instance Availability
 InstanceAvailability
@@ -463,6 +481,18 @@ SH
 (0008,0096)
 Referring Physician Identification Sequence
 ReferringPhysicianIdentificationSequence
+SQ
+1
+
+(0008,009C)
+Consulting Physician's Name
+ConsultingPhysicianName
+PN
+1-n
+
+(0008,009D)
+Consulting Physician Identification Sequence
+ConsultingPhysicianIdentificationSequence
 SQ
 1
 
@@ -604,10 +634,76 @@ EquivalentCodeSequence
 SQ
 1
 
+(0008,0122)
+Mapping Resource Name
+MappingResourceName
+LO
+1
+
+(0008,0123)
+Context Group Identification Sequence
+ContextGroupIdentificationSequence
+SQ
+1
+
+(0008,0124)
+Mapping Resource Identification Sequence
+MappingResourceIdentificationSequence
+SQ
+1
+
 (0008,0201)
 Timezone Offset From UTC
 TimezoneOffsetFromUTC
 SH
+1
+
+(0008,0300)
+Private Data Element Characteristics Sequence
+PrivateDataElementCharacteristicsSequence
+SQ
+1
+
+(0008,0301)
+Private Group Reference
+PrivateGroupReference
+US
+1
+
+(0008,0302)
+Private Creator Reference
+PrivateCreatorReference
+LO
+1
+
+(0008,0303)
+Block Identifying Information Status
+BlockIdentifyingInformationStatus
+CS
+1
+
+(0008,0304)
+Nonidentifying Private Elements
+NonidentifyingPrivateElements
+US
+1-n
+
+(0008,0305)
+Deidentification Action Sequence
+DeidentificationActionSequence
+SQ
+1
+
+(0008,0306)
+Identifying Private Elements
+IdentifyingPrivateElements
+US
+1-n
+
+(0008,0307)
+Deidentification Action
+DeidentificationAction
+CS
 1
 
 (0008,1000)
@@ -883,6 +979,12 @@ SQ
 (0008,1199)
 Referenced SOP Sequence
 ReferencedSOPSequence
+SQ
+1
+
+(0008,119A)
+Other Failures Sequence
+OtherFailuresSequence
 SQ
 1
 
@@ -1294,6 +1396,24 @@ IssuerOfPatientIDQualifiersSequence
 SQ
 1
 
+(0010,0026)
+Source Patient Group Identification Sequence
+SourcePatientGroupIdentificationSequence
+SQ
+1
+
+(0010,0027)
+Group of Patients Identification Sequence
+GroupOfPatientsIdentificationSequence
+SQ
+1
+
+(0010,0028)
+Subject Relative Position in Image
+SubjectRelativePositionInImage
+US
+3
+
 (0010,0030)
 Patient's Birth Date
 PatientBirthDate
@@ -1304,6 +1424,24 @@ DA
 Patient's Birth Time
 PatientBirthTime
 TM
+1
+
+(0010,0033)
+Patient's Birth Date in Alternative Calendar
+PatientBirthDateInAlternativeCalendar
+LO
+1
+
+(0010,0034)
+Patient's Death Date in Alternative Calendar
+PatientDeathDateInAlternativeCalendar
+LO
+1
+
+(0010,0035)
+Patient's Alternative Calendar
+PatientAlternativeCalendar
+CS
 1
 
 (0010,0040)
@@ -1339,6 +1477,54 @@ CS
 (0010,0201)
 Quality Control Subject Type Code Sequence
 QualityControlSubjectTypeCodeSequence
+SQ
+1
+
+(0010,0212)
+Strain Description
+StrainDescription
+UC
+1
+
+(0010,0213)
+Strain Nomenclature
+StrainNomenclature
+LO
+1
+
+(0010,0214)
+Strain Stock Number
+StrainStockNumber
+LO
+1
+
+(0010,0215)
+Strain Source Registry Code Sequence
+StrainSourceRegistryCodeSequence
+SQ
+1
+
+(0010,0216)
+Strain Stock Sequence
+StrainStockSequence
+SQ
+1
+
+(0010,0217)
+Strain Source
+StrainSource
+LO
+1
+
+(0010,0218)
+Strain Additional Information
+StrainAdditionalInformation
+UT
+1
+
+(0010,0219)
+Strain Code Sequence
+StrainCodeSequence
 SQ
 1
 
@@ -1461,6 +1647,12 @@ Patient's Telephone Numbers
 PatientTelephoneNumbers
 SH
 1-n
+
+(0010,2155)
+Patient's Telecom Information
+PatientTelecomInformation
+LT
+1
 
 (0010,2160)
 Ethnic Group
@@ -1712,25 +1904,25 @@ CS
 CAD File Format
 CADFileFormat
 ST
-1-n
+1
 RET
 (0014,0024)
 Component Reference System
 ComponentReferenceSystem
 ST
-1-n
+1
 RET
 (0014,0025)
 Component Manufacturing Procedure
 ComponentManufacturingProcedure
 ST
-1-n
+1
 DICONDE
 (0014,0028)
 Component Manufacturer
 ComponentManufacturer
 ST
-1-n
+1
 DICONDE
 (0014,0030)
 Material Thickness
@@ -1754,19 +1946,19 @@ DICONDE
 Material Grade
 MaterialGrade
 ST
-1-n
+1
 DICONDE
 (0014,0044)
 Material Properties Description
 MaterialPropertiesDescription
 ST
-1-n
+1
 DICONDE
 (0014,0045)
 Material Properties File Format (Retired)
 MaterialPropertiesFileFormatRetired
 ST
-1-n
+1
 RET
 (0014,0046)
 Material Notes
@@ -1797,6 +1989,60 @@ Inner Diameter
 InnerDiameter
 DS
 1
+DICONDE
+(0014,0100)
+Component Welder IDs
+ComponentWelderIDs
+LO
+1-n
+DICONDE
+(0014,0101)
+Secondary Approval Status
+SecondaryApprovalStatus
+CS
+1
+DICONDE
+(0014,0102)
+Secondary Review Date
+SecondaryReviewDate
+DA
+1
+DICONDE
+(0014,0103)
+Secondary Review Time
+SecondaryReviewTime
+TM
+1
+DICONDE
+(0014,0104)
+Secondary Reviewer Name
+SecondaryReviewerName
+PN
+1
+DICONDE
+(0014,0105)
+Repair ID
+RepairID
+ST
+1
+DICONDE
+(0014,0106)
+Multiple Component Approval Sequence
+MultipleComponentApprovalSequence
+SQ
+1
+DICONDE
+(0014,0107)
+Other Approval Status
+OtherApprovalStatus
+CS
+1-n
+DICONDE
+(0014,0108)
+Other Secondary Approval Status
+OtherSecondaryApprovalStatus
+CS
+1-n
 DICONDE
 (0014,1010)
 Actual Environmental Conditions
@@ -2992,6 +3238,12 @@ KVP
 DS
 1
 
+(0018,0061)
+
+
+DS
+1
+RET
 (0018,0070)
 Counts Accumulated
 CountsAccumulated
@@ -3874,6 +4126,18 @@ PhosphorType
 LO
 1
 
+(0018,1271)
+Water Equivalent Diameter
+WaterEquivalentDiameter
+FD
+1
+
+(0018,1272)
+Water Equivalent Diameter Calculation Method Code Sequence
+WaterEquivalentDiameterCalculationMethodCodeSequence
+SQ
+1
+
 (0018,1300)
 Scan Velocity
 ScanVelocity
@@ -3926,6 +4190,12 @@ DS
 dB/dt
 dBdt
 DS
+1
+
+(0018,1320)
+B1rms
+B1rms
+FL
 1
 
 (0018,1400)
@@ -6862,6 +7132,30 @@ DiffusionBValueZZ
 FD
 1
 
+(0018,9621)
+Functional MR Sequence
+FunctionalMRSequence
+SQ
+1
+
+(0018,9622)
+Functional Settling Phase Frames Present
+FunctionalSettlingPhaseFramesPresent
+CS
+1
+
+(0018,9623)
+Functional Sync Pulse
+FunctionalSyncPulse
+DT
+1
+
+(0018,9624)
+Settling Phase Frame
+SettlingPhaseFrame
+CS
+1
+
 (0018,9701)
 Decay Correction DateTime
 DecayCorrectionDateTime
@@ -8140,6 +8434,12 @@ RightImageSequence
 SQ
 1
 
+(0022,0028)
+Stereo Pairs Present
+StereoPairsPresent
+CS
+1
+
 (0022,0030)
 Axial Length of the Eye
 AxialLengthOfTheEye
@@ -8777,7 +9077,7 @@ SQ
 1
 
 (0022,1527)
-Wide Field Ophthalmic Photography  Threshold Quality Rating
+Wide Field Ophthalmic Photography Threshold Quality Rating
 WideFieldOphthalmicPhotographyThresholdQualityRating
 FL
 1
@@ -10132,6 +10432,12 @@ SegmentedBluePaletteColorLookupTableData
 OW
 1
 
+(0028,1224)
+Segmented Alpha Palette Color Lookup Table Data
+SegmentedAlphaPaletteColorLookupTableData
+OW
+1
+
 (0028,1300)
 Breast Implant Present
 BreastImplantPresent
@@ -10250,6 +10556,12 @@ CS
 ICC Profile
 ICCProfile
 OB
+1
+
+(0028,2002)
+Color Space
+ColorSpace
+CS
 1
 
 (0028,2110)
@@ -12130,6 +12442,12 @@ PersonTelephoneNumbers
 LO
 1-n
 
+(0040,1104)
+Person's Telecom Information
+PersonTelecomInformation
+LT
+1
+
 (0040,1400)
 Requested Procedure Comments
 RequestedProcedureComments
@@ -12182,6 +12500,12 @@ SH
 Order Callback Phone Number
 OrderCallbackPhoneNumber
 SH
+1
+
+(0040,2011)
+Order Callback Telecom Information
+OrderCallbackTelecomInformation
+LT
 1
 
 (0040,2016)
@@ -12424,6 +12748,36 @@ ProcedureStepCancellationDateTime
 DT
 1
 
+(0040,4070)
+Output Destination Sequence
+OutputDestinationSequence
+SQ
+1
+
+(0040,4071)
+DICOM Storage Sequence
+DICOMStorageSequence
+SQ
+1
+
+(0040,4072)
+STOW-RS Storage Sequence
+STOWRSStorageSequence
+SQ
+1
+
+(0040,4073)
+Storage URL
+StorageURL
+UR
+1
+
+(0040,4074)
+XDS Storage Sequence
+XDSStorageSequence
+SQ
+1
+
 (0040,8302)
 Entrance Dose in mGy
 EntranceDoseInmGy
@@ -12471,6 +12825,18 @@ Real World Value LUT Data
 RealWorldValueLUTData
 FD
 1-n
+
+(0040,9213)
+Double Float Real World Value Last Value Mapped
+DoubleFloatRealWorldValueLastValueMapped
+FD
+1
+
+(0040,9214)
+Double Float Real World Value First Value Mapped
+DoubleFloatRealWorldValueFirstValueMapped
+FD
+1
 
 (0040,9216)
 Real World Value First Value Mapped
@@ -14932,6 +15298,18 @@ UsedSegmentsSequence
 SQ
 1
 
+(0062,0020)
+Tracking ID
+TrackingID
+UT
+1
+
+(0062,0021)
+Tracking UID
+TrackingUID
+UI
+1
+
 (0064,0002)
 Deformable Registration Sequence
 DeformableRegistrationSequence
@@ -15141,19 +15519,19 @@ Triangle Point Index List
 TrianglePointIndexList
 OW
 1
-
+RET
 (0066,0024)
 Edge Point Index List
 EdgePointIndexList
 OW
 1
-
+RET
 (0066,0025)
 Vertex Point Index List
 VertexPointIndexList
 OW
 1
-
+RET
 (0066,0026)
 Triangle Strip Sequence
 TriangleStripSequence
@@ -15177,7 +15555,7 @@ Primitive Point Index List
 PrimitivePointIndexList
 OW
 1
-
+RET
 (0066,002A)
 Surface Count
 SurfaceCount
@@ -15265,26 +15643,122 @@ FL
 (0066,0040)
 Long Primitive Point Index List
 LongPrimitivePointIndexList
-UL
-1-n
+OL
+1
 
 (0066,0041)
 Long Triangle Point Index List
 LongTrianglePointIndexList
-UL
-3-3n
+OL
+1
 
 (0066,0042)
 Long Edge Point Index List
 LongEdgePointIndexList
-UL
-2-2n
+OL
+1
 
 (0066,0043)
 Long Vertex Point Index List
 LongVertexPointIndexList
+OL
+1
+
+(0066,0101)
+Track Set Sequence
+TrackSetSequence
+SQ
+1
+
+(0066,0102)
+Track Sequence
+TrackSequence
+SQ
+1
+
+(0066,0103)
+Recommended Display CIELab Value List
+RecommendedDisplayCIELabValueList
+OW
+1
+
+(0066,0104)
+Tracking Algorithm Identification Sequence
+TrackingAlgorithmIdentificationSequence
+SQ
+1
+
+(0066,0105)
+Track Set Number
+TrackSetNumber
 UL
-1-n
+1
+
+(0066,0106)
+Track Set Label
+TrackSetLabel
+LO
+1
+
+(0066,0107)
+Track Set Description
+TrackSetDescription
+UT
+1
+
+(0066,0108)
+Track Set Anatomical Type Code Sequence
+TrackSetAnatomicalTypeCodeSequence
+SQ
+1
+
+(0066,0121)
+Measurements Sequence
+MeasurementsSequence
+SQ
+1
+
+(0066,0124)
+Track Set Statistics Sequence
+TrackSetStatisticsSequence
+SQ
+1
+
+(0066,0125)
+Floating Point Values
+FloatingPointValues
+OF
+1
+
+(0066,0129)
+Track Point Index List
+TrackPointIndexList
+OL
+1
+
+(0066,0130)
+Track Statistics Sequence
+TrackStatisticsSequence
+SQ
+1
+
+(0066,0132)
+Measurement Values Sequence
+MeasurementValuesSequence
+SQ
+1
+
+(0066,0133)
+Diffusion Acquisition Code Sequence
+DiffusionAcquisitionCodeSequence
+SQ
+1
+
+(0066,0134)
+Diffusion Model Code Sequence
+DiffusionModelCodeSequence
+SQ
+1
 
 (0068,6210)
 Implant Size
@@ -16246,6 +16720,12 @@ MatrixSequence
 SQ
 1
 
+(0070,030B)
+Frame of Reference to Displayed Coordinate System Transformation Matrix
+FrameOfReferenceToDisplayedCoordinateSystemTransformationMatrix
+FD
+16
+
 (0070,030C)
 Frame of Reference Transformation Matrix Type
 FrameOfReferenceTransformationMatrixType
@@ -16340,6 +16820,282 @@ SQ
 Blending Position
 BlendingPosition
 CS
+1
+
+(0070,1101)
+Presentation Display Collection UID
+PresentationDisplayCollectionUID
+UI
+1
+
+(0070,1102)
+Presentation Sequence Collection UID
+PresentationSequenceCollectionUID
+UI
+1
+
+(0070,1103)
+Presentation Sequence Position Index
+PresentationSequencePositionIndex
+US
+1
+
+(0070,1104)
+Rendered Image Reference Sequence
+RenderedImageReferenceSequence
+SQ
+1
+
+(0070,1201)
+Volumetric Presentation State Input Sequence
+VolumetricPresentationStateInputSequence
+SQ
+1
+
+(0070,1202)
+Presentation Input Type
+PresentationInputType
+CS
+1
+
+(0070,1203)
+Input Sequence Position Index
+InputSequencePositionIndex
+US
+1
+
+(0070,1204)
+Crop
+Crop
+CS
+1
+
+(0070,1205)
+Cropping Specification Index
+CroppingSpecificationIndex
+US
+1-n
+
+(0070,1206)
+Compositing Method
+CompositingMethod
+CS
+1
+
+(0070,1207)
+Volumetric Presentation Input Number
+VolumetricPresentationInputNumber
+US
+1
+
+(0070,1208)
+Image Volume Geometry
+ImageVolumeGeometry
+CS
+1
+
+(0070,1301)
+Volume Cropping Sequence
+VolumeCroppingSequence
+SQ
+1
+
+(0070,1302)
+Volume Cropping Method
+VolumeCroppingMethod
+CS
+1
+
+(0070,1303)
+Bounding Box Crop
+BoundingBoxCrop
+FD
+6
+
+(0070,1304)
+Oblique Cropping Plane Sequence
+ObliqueCroppingPlaneSequence
+SQ
+1
+
+(0070,1305)
+Plane
+Plane
+FD
+4
+
+(0070,1306)
+Plane Normal
+PlaneNormal
+FD
+3
+
+(0070,1309)
+Cropping Specification Number
+CroppingSpecificationNumber
+US
+1
+
+(0070,1501)
+Multi-Planar Reconstruction Style
+MultiPlanarReconstructionStyle
+CS
+1
+
+(0070,1502)
+MPR Thickness Type
+MPRThicknessType
+CS
+1
+
+(0070,1503)
+MPR Slab Thickness
+MPRSlabThickness
+FD
+1
+
+(0070,1505)
+MPR Top Left Hand Corner
+MPRTopLeftHandCorner
+FD
+3
+
+(0070,1507)
+MPR View Width Direction
+MPRViewWidthDirection
+FD
+3
+
+(0070,1508)
+MPR View Width
+MPRViewWidth
+FD
+1
+
+(0070,150C)
+Number of Volumetric Curve Points
+NumberOfVolumetricCurvePoints
+UL
+1
+
+(0070,150D)
+Volumetric Curve Points
+VolumetricCurvePoints
+OD
+1
+
+(0070,1511)
+MPR View Height Direction
+MPRViewHeightDirection
+FD
+3
+
+(0070,1512)
+MPR View Height
+MPRViewHeight
+FD
+1
+
+(0070,1801)
+Presentation State Classification Component Sequence
+PresentationStateClassificationComponentSequence
+SQ
+1
+
+(0070,1802)
+Component Type
+ComponentType
+CS
+1
+
+(0070,1803)
+Component Input Sequence
+ComponentInputSequence
+SQ
+1
+
+(0070,1804)
+Volumetric Presentation Input Index
+VolumetricPresentationInputIndex
+US
+1
+
+(0070,1805)
+Presentation State Compositor Component Sequence
+PresentationStateCompositorComponentSequence
+SQ
+1
+
+(0070,1806)
+Weighting Transfer Function Sequence
+WeightingTransferFunctionSequence
+SQ
+1
+
+(0070,1807)
+Weighting Lookup Table Descriptor
+WeightingLookupTableDescriptor
+US
+3
+
+(0070,1808)
+Weighting Lookup Table Data
+WeightingLookupTableData
+OB
+1
+
+(0070,1901)
+Volumetric Annotation Sequence
+VolumetricAnnotationSequence
+SQ
+1
+
+(0070,1903)
+Referenced Structured Context Sequence
+ReferencedStructuredContextSequence
+SQ
+1
+
+(0070,1904)
+Referenced Content Item
+ReferencedContentItem
+UI
+1
+
+(0070,1905)
+Volumetric Presentation Input Annotation Sequence
+VolumetricPresentationInputAnnotationSequence
+SQ
+1
+
+(0070,1907)
+Annotation Clipping
+AnnotationClipping
+CS
+1
+
+(0070,1A01)
+Presentation Animation Style
+PresentationAnimationStyle
+CS
+1
+
+(0070,1A03)
+Recommended Animation Rate
+RecommendedAnimationRate
+FD
+1
+
+(0070,1A04)
+Animation Curve Sequence
+AnimationCurveSequence
+SQ
+1
+
+(0070,1A05)
+Animation Step Size
+AnimationStepSize
+FD
 1
 
 (0072,0002)
@@ -16504,10 +17260,28 @@ SelectorAttributePrivateCreator
 LO
 1
 
+(0072,005E)
+Selector AE Value
+SelectorAEValue
+AE
+1-n
+
+(0072,005F)
+Selector AS Value
+SelectorASValue
+AS
+1-n
+
 (0072,0060)
 Selector AT Value
 SelectorATValue
 AT
+1-n
+
+(0072,0061)
+Selector DA Value
+SelectorDAValue
+DA
 1-n
 
 (0072,0062)
@@ -16516,11 +17290,23 @@ SelectorCSValue
 CS
 1-n
 
+(0072,0063)
+Selector DT Value
+SelectorDTValue
+DT
+1-n
+
 (0072,0064)
 Selector IS Value
 SelectorISValue
 IS
 1-n
+
+(0072,0065)
+Selector OB Value
+SelectorOBValue
+OB
+1
 
 (0072,0066)
 Selector LO Value
@@ -16528,10 +17314,22 @@ SelectorLOValue
 LO
 1-n
 
+(0072,0067)
+Selector OF Value
+SelectorOFValue
+OF
+1
+
 (0072,0068)
 Selector LT Value
 SelectorLTValue
 LT
+1
+
+(0072,0069)
+Selector OW Value
+SelectorOWValue
+OW
 1
 
 (0072,006A)
@@ -16540,11 +17338,23 @@ SelectorPNValue
 PN
 1-n
 
+(0072,006B)
+Selector TM Value
+SelectorTMValue
+TM
+1-n
+
 (0072,006C)
 Selector SH Value
 SelectorSHValue
 SH
 1-n
+
+(0072,006D)
+Selector UN Value
+SelectorUNValue
+UN
+1
 
 (0072,006E)
 Selector ST Value
@@ -16552,10 +17362,22 @@ SelectorSTValue
 ST
 1
 
+(0072,006F)
+Selector UC Value
+SelectorUCValue
+UC
+1-n
+
 (0072,0070)
 Selector UT Value
 SelectorUTValue
 UT
+1
+
+(0072,0071)
+Selector UR Value
+SelectorURValue
+UR
 1
 
 (0072,0072)
@@ -16564,11 +17386,23 @@ SelectorDSValue
 DS
 1-n
 
+(0072,0073)
+Selector OD Value
+SelectorODValue
+OD
+1
+
 (0072,0074)
 Selector FD Value
 SelectorFDValue
 FD
 1-n
+
+(0072,0075)
+Selector OL Value
+SelectorOLValue
+OL
+1
 
 (0072,0076)
 Selector FL Value
@@ -16598,6 +17432,12 @@ SL
 Selector SS Value
 SelectorSSValue
 SS
+1-n
+
+(0072,007F)
+Selector UI Value
+SelectorUIValue
+UI
 1-n
 
 (0072,0080)
@@ -17338,6 +18178,90 @@ DoubleExposureFieldDelta
 FD
 4
 
+(0074,1401)
+Brachy Task Sequence
+BrachyTaskSequence
+SQ
+1
+
+(0074,1402)
+Continuation Start Total Reference Air Kerma
+ContinuationStartTotalReferenceAirKerma
+DS
+1
+
+(0074,1403)
+Continuation End Total Reference Air Kerma
+ContinuationEndTotalReferenceAirKerma
+DS
+1
+
+(0074,1404)
+Continuation Pulse Number
+ContinuationPulseNumber
+IS
+1
+
+(0074,1405)
+Channel Delivery Order Sequence
+ChannelDeliveryOrderSequence
+SQ
+1
+
+(0074,1406)
+Referenced Channel Number
+ReferencedChannelNumber
+IS
+1
+
+(0074,1407)
+Start Cumulative Time Weight
+StartCumulativeTimeWeight
+DS
+1
+
+(0074,1408)
+End Cumulative Time Weight
+EndCumulativeTimeWeight
+DS
+1
+
+(0074,1409)
+Omitted Channel Sequence
+OmittedChannelSequence
+SQ
+1
+
+(0074,140A)
+Reason for Channel Omission
+ReasonForChannelOmission
+CS
+1
+
+(0074,140B)
+Reason for Channel Omission Description
+ReasonForChannelOmissionDescription
+LO
+1
+
+(0074,140C)
+Channel Delivery Order Index
+ChannelDeliveryOrderIndex
+IS
+1
+
+(0074,140D)
+Channel Delivery Continuation Sequence
+ChannelDeliveryContinuationSequence
+SQ
+1
+
+(0074,140E)
+Omitted Application Setup Sequence
+OmittedApplicationSetupSequence
+SQ
+1
+
 (0076,0001)
 Implant Assembly Template Name
 ImplantAssemblyTemplateName
@@ -17662,6 +18586,144 @@ ReferencedSurfaceDataSequence
 SQ
 1
 
+(0082,0001)
+Assessment Summary
+AssessmentSummary
+CS
+1
+
+(0082,0003)
+Assessment Summary Description
+AssessmentSummaryDescription
+UT
+1
+
+(0082,0004)
+Assessed SOP Instance Sequence
+AssessedSOPInstanceSequence
+SQ
+1
+
+(0082,0005)
+Referenced Comparison SOP Instance Sequence
+ReferencedComparisonSOPInstanceSequence
+SQ
+1
+
+(0082,0006)
+Number of Assessment Observations
+NumberOfAssessmentObservations
+UL
+1
+
+(0082,0007)
+Assessment Observations Sequence
+AssessmentObservationsSequence
+SQ
+1
+
+(0082,0008)
+Observation Significance
+ObservationSignificance
+CS
+1
+
+(0082,000A)
+Observation Description
+ObservationDescription
+UT
+1
+
+(0082,000C)
+Structured Constraint Observation Sequence
+StructuredContraintObservationSequence
+SQ
+1
+
+(0082,0010)
+Assessed Attribute Value Sequence
+AssessedAttributeValueSequence
+SQ
+1
+
+(0082,0016)
+Assessment Set ID
+AssessmentSetID
+LO
+1
+
+(0082,0017)
+Assessment Requester Sequence
+AssessmentRequesterSequence
+SQ
+1
+
+(0082,0018)
+Selector Attribute Name
+SelectorAttributeName
+LO
+1
+
+(0082,0019)
+Selector Attribute Keyword
+SelectorAttributeKeyword
+LO
+1
+
+(0082,0021)
+Assessment Type Code Sequence
+AssessmentTypeCodeSequence
+SQ
+1
+
+(0082,0022)
+Observation Basis Code Sequence
+ObservationBasisCodeSequence
+SQ
+1
+
+(0082,0023)
+Assessment Label
+AssessmentLabel
+LO
+1
+
+(0082,0032)
+Constraint Type
+ConstraintType
+CS
+1
+
+(0082,0033)
+Specification Selection Guidance
+SpecificationSelectionGuidance
+UT
+1
+
+(0082,0034)
+Constraint Value Sequence
+ConstraintValueSequence
+SQ
+1
+
+(0082,0035)
+Recommended Default Value Sequence
+RecommendedDefaultValueSequence
+SQ
+1
+
+(0082,0036)
+Constraint Violation Significance
+ConstraintViolationSignificance
+CS
+1
+
+(0082,0037)
+Constraint Violation Condition
+ConstraintViolationCondition
+UT
+1
+
 (0088,0130)
 Storage Media File-set ID
 StorageMediaFileSetID
@@ -17794,6 +18856,12 @@ CertifiedTimestamp
 OB
 1
 
+(0400,0315)
+
+
+FL
+1
+RET
 (0400,0401)
 Digital Signature Purpose Code Sequence
 DigitalSignaturePurposeCodeSequence
@@ -18405,7 +19473,7 @@ Destination AE
 DestinationAE
 AE
 1
-RET
+
 (2100,0160)
 Owner ID
 OwnerID
@@ -20170,6 +21238,24 @@ AverageBeamDosePointSSD
 FL
 1
 
+(300A,0090)
+Beam Dose Type
+BeamDoseType
+CS
+1
+
+(300A,0091)
+Alternate Beam Dose
+AlternateBeamDose
+DS
+1
+
+(300A,0092)
+Alternate Beam Dose Type
+AlternateBeamDoseType
+CS
+1
+
 (300A,00A0)
 Number of Brachy Application Setups
 NumberOfBrachyApplicationSetups
@@ -20783,8 +21869,8 @@ DS
 1
 
 (300A,0131)
-Average Beam Dose Point Source to External Contour Surface Distance
-AverageBeamDosePointSourceToExternalContourSurfaceDistance
+Average Beam Dose Point Source to External Contour Distance
+AverageBeamDosePointSourceToExternalContourDistance
 FL
 1
 
@@ -20852,6 +21938,42 @@ CS
 Gantry Pitch Angle Tolerance
 GantryPitchAngleTolerance
 FL
+1
+
+(300A,0150)
+Fixation Eye
+FixationEye
+CS
+1
+
+(300A,0151)
+Chair Head Frame Position
+ChairHeadFramePosition
+DS
+1
+
+(300A,0152)
+Head Fixation Angle Tolerance
+HeadFixationAngleTolerance
+DS
+1
+
+(300A,0153)
+Chair Head Frame Position Tolerance
+ChairHeadFramePositionTolerance
+DS
+1
+
+(300A,0154)
+Fixation Light Azimuthal Angle Tolerance
+FixationLightAzimuthalAngleTolerance
+DS
+1
+
+(300A,0155)
+Fixation Light Polar Angle Tolerance
+FixationLightPolarAngleTolerance
+DS
 1
 
 (300A,0180)
@@ -21496,6 +22618,12 @@ ScanMode
 CS
 1
 
+(300A,0309)
+Modulated Scan Mode Type
+ModulatedScanModeType
+CS
+1
+
 (300A,030A)
 Virtual Source-Axis Distances
 VirtualSourceAxisDistances
@@ -21658,6 +22786,12 @@ PatientSupportAccessoryCode
 LO
 1
 
+(300A,0355)
+Tray Accessory Code
+TrayAccessoryCode
+LO
+1
+
 (300A,0356)
 Fixation Light Azimuthal Angle
 FixationLightAzimuthalAngle
@@ -21760,10 +22894,22 @@ ScanSpotTuneID
 SH
 1
 
+(300A,0391)
+Scan Spot Prescribed Indices
+ScanSpotPrescribedIndices
+IS
+1-n
+
 (300A,0392)
 Number of Scan Spot Positions
 NumberOfScanSpotPositions
 IS
+1
+
+(300A,0393)
+Scan Spot Reordered
+ScanSpotReordered
+CS
 1
 
 (300A,0394)
@@ -21771,6 +22917,12 @@ Scan Spot Position Map
 ScanSpotPositionMap
 FL
 1-n
+
+(300A,0395)
+Scan Spot Reordering Allowed
+ScanSpotReorderingAllowed
+CS
+1
 
 (300A,0396)
 Scan Spot Meterset Weights
@@ -21976,6 +23128,78 @@ DeviceMotionParameterCodeSequence
 SQ
 1
 
+(300A,0501)
+Distal Depth Fraction
+DistalDepthFraction
+FL
+1
+
+(300A,0502)
+Distal Depth
+DistalDepth
+FL
+1
+
+(300A,0503)
+Nominal Range Modulation Fractions
+NominalRangeModulationFractions
+FL
+2
+
+(300A,0504)
+Nominal Range Modulated Region Depths
+NominalRangeModulatedRegionDepths
+FL
+2
+
+(300A,0505)
+Depth Dose Parameters Sequence
+DepthDoseParametersSequence
+SQ
+1
+
+(300A,0506)
+Delivered Depth Dose Parameters Sequence
+DeliveredDepthDoseParametersSequence
+SQ
+1
+
+(300A,0507)
+Delivered Distal Depth Fraction
+DeliveredDistalDepthFraction
+FL
+1
+
+(300A,0508)
+Delivered Distal Depth
+DeliveredDistalDepth
+FL
+1
+
+(300A,0509)
+Delivered Nominal Range Modulation Fractions
+DeliveredNominalRangeModulationFractions
+FL
+2
+
+(300A,0510)
+Delivered Nominal Range Modulated Region Depths
+DeliveredNominalRangeModulatedRegionDepths
+FL
+2
+
+(300A,0511)
+Delivered Reference Dose Definition
+DeliveredReferenceDoseDefinition
+CS
+1
+
+(300A,0512)
+Reference Dose Definition
+ReferenceDoseDefinition
+CS
+1
+
 (300C,0002)
 Referenced RT Plan Sequence
 ReferencedRTPlanSequence
@@ -22160,6 +23384,24 @@ IS
 Referenced Range Modulator Number
 ReferencedRangeModulatorNumber
 IS
+1
+
+(300C,0111)
+Omitted Beam Task Sequence
+OmittedBeamTaskSequence
+SQ
+1
+
+(300C,0112)
+Reason for Omission
+ReasonForOmission
+CS
+1
+
+(300C,0113)
+Reason for Omission Description
+ReasonForOmissionDescription
+LO
 1
 
 (300E,0002)

@@ -1,9 +1,6 @@
 include_directories(${DICOM_INCLUDE_DIRS})
 
 set(BASE_LIBS vtkDICOM ${VTK_LIBS})
-if(USE_DCMTK AND DCMTK_charls_LIBRARY)
- set(BASE_LIBS ${BASE_LIBS} ${DCMTK_charls_LIBRARY})
-endif()
 
 add_executable(TestDICOMDictionary TestDICOMDictionary.cxx)
 target_link_libraries(TestDICOMDictionary ${BASE_LIBS})
@@ -50,9 +47,14 @@ target_link_libraries(TestDICOMUtilities ${BASE_LIBS})
 get_target_property(pth TestDICOMUtilities RUNTIME_OUTPUT_DIRECTORY)
 add_test(TestDICOMUtilities ${pth}/TestDICOMUtilities)
 
+add_executable(TestDICOMFilePath TestDICOMFilePath.cxx)
+target_link_libraries(TestDICOMFilePath ${BASE_LIBS})
+get_target_property(pth TestDICOMFilePath RUNTIME_OUTPUT_DIRECTORY)
+add_test(TestDICOMFilePath ${pth}/TestDICOMFilePath)
+
 if(BUILD_PYTHON_WRAPPERS)
   if(NOT VTK_PYTHON_EXE)
-    get_target_property(WRAP_PYTHON_PATH vtkWrapPython LOCATION)
+    get_target_property(WRAP_PYTHON_PATH vtkWrapPython LOCATION_<CONFIG>)
     get_filename_component(VTK_EXE_DIR ${WRAP_PYTHON_PATH} PATH)
     find_program(VTK_PYTHON_EXE vtkpython "${VTK_EXE_DIR}")
   endif()
@@ -68,6 +70,22 @@ if(BUILD_PYTHON_WRAPPERS)
     set_tests_properties(TestDICOMPython PROPERTIES ENVIRONMENT
       "PYTHONPATH=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
   endif()
+endif()
+
+if(BUILD_TCL_WRAPPERS)
+  if(NOT VTK_TCL_EXE AND (NOT UNIX OR DEFINED ENV{DISPLAY}))
+    get_target_property(WRAP_TCL_PATH vtkWrapTcl LOCATION_<CONFIG>)
+    get_filename_component(VTK_EXE_DIR ${WRAP_TCL_PATH} PATH)
+    find_program(VTK_TCL_EXE vtk "${VTK_EXE_DIR}")
+  endif()
+  if(NOT VTK_TCL_EXE)
+    # fall back to using tclsh
+    set(VTK_TCL_EXE ${TCL_TCLSH})
+  endif()
+  add_test(TestDICOMTcl "${TCL_TCLSH}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TestDICOMTcl.tcl")
+  set_tests_properties(TestDICOMTcl PROPERTIES ENVIRONMENT
+    "TCLLIBPATH={${CMAKE_LIBRARY_OUTPUT_DIRECTORY}} {${VTK_DIR}/Wrapping/Tcl}")
 endif()
 
 if(BUILD_JAVA_WRAPPERS)

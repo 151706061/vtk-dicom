@@ -23,6 +23,7 @@
 #include "vtkDICOMImageCodec.h"
 #include "vtkDICOMSliceSorter.h"
 #include "vtkDICOMUtilities.h"
+#include "vtkDICOMConfig.h"
 
 #include "vtkObjectFactory.h"
 #include "vtkImageData.h"
@@ -61,13 +62,16 @@
 #include "gdcmImageReader.h"
 #endif
 
-#include "vtksys/SystemTools.hxx"
-#include "vtksys/ios/sstream"
-
 #include <algorithm>
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
+
+// For compatibility with new VTK generic data arrays
+#ifdef vtkGenericDataArray_h
+#define SetTupleValue SetTypedTuple
+#define GetTupleValue GetTypedTuple
+#endif
 
 vtkStandardNewMacro(vtkDICOMReader);
 vtkCxxSetObjectMacro(vtkDICOMReader,Sorter,vtkDICOMSliceSorter);
@@ -75,6 +79,8 @@ vtkCxxSetObjectMacro(vtkDICOMReader,Sorter,vtkDICOMSliceSorter);
 //----------------------------------------------------------------------------
 vtkDICOMReader::vtkDICOMReader()
 {
+  this->AutoYBRToRGB = 1;
+  this->NeedsYBRToRGB = 0;
   this->AutoRescale = 1;
   this->NeedsRescale = 0;
   this->RescaleSlope = 1.0;
@@ -793,7 +799,7 @@ int vtkDICOMReader::RequestInformation(
 
   // photometric interpretation
   // "MONOCHROME1" "MONOCHROME2"
-  // "PALETTE_COLOR" "RGB" (convert palette color to RGB)
+  // "PALETTE COLOR" "RGB" (convert palette color to RGB)
   // "HSV" "ARGB" "CMYK" (all three are retired)
   // "YBR_FULL" "YBR_FULL_422" (use CCIR 601-2 to convert to RGB)
   // "YBR_PARTIAL_422" "YBR_PARTIAL_420" (use CCIR 601-2 to convert to RGB)
@@ -1108,6 +1114,90 @@ void vtkDICOMReader::RescaleBuffer(
 }
 
 //----------------------------------------------------------------------------
+void vtkDICOMReader::YBRToRGB(
+  int fileIdx, int, void *buffer, vtkIdType bufferSize)
+{
+  // digital luminance levels and color levels from Rec. 601
+  const int ylevels = 220;
+  const int clevels = 225;
+
+  // the digital black level from Rec. 601
+  double ymin = 16.0;
+
+  // the color constants from Rec. 601
+  const double Kb = 0.114;
+  const double Kr = 0.299;
+  double Kg = 1.0 - Kb - Kr;
+
+  // compute the matrix for YPbPr to RGB conversion
+  double matrix[3][3] = {
+    { 1.0,  0.0,                 2.0*(1.0-Kr)       },
+    { 1.0, -2.0*Kb*(1.0-Kb)/Kg, -2.0*Kr*(1.0-Kr)/Kg },
+    { 1.0,  2.0*(1.0-Kb),        0.0                }
+  };
+
+  // get information from the meta data
+  vtkDICOMMetaData *meta = this->MetaData;
+  const vtkDICOMValue& photometric = meta->GetAttributeValue(
+    fileIdx, DC::PhotometricInterpretation);
+  const vtkDICOMValue& transferSyntax = meta->GetAttributeValue(
+    fileIdx, DC::TransferSyntaxUID);
+
+  // catch JPEG baseline images with incorrect PhotometricInterpretation
+  if (transferSyntax.Matches("1.2.840.10008.1.2.4.50") ||
+      photometric.Matches("YBR_FULL*"))
+    {
+    // use full-range, therefore black level is zero
+    ymin = 0.0;
+    }
+  else if (photometric.Matches("YBR_PARTIAL*"))
+    {
+    // stretch the matrix so that full-range RGB is produced
+    for (int i = 0; i < 3; i++)
+      {
+      matrix[i][0] *= 255.0/(ylevels - 1);
+      matrix[i][1] *= 255.0/(clevels - 1);
+      matrix[i][2] *= 255.0/(clevels - 1);
+      }
+    }
+  else
+    {
+    // no YBR here, so exit!
+    return;
+    }
+
+  if (bufferSize >= 3)
+    {
+    unsigned char *cp = static_cast<unsigned char *>(buffer);
+    vtkIdType n = bufferSize/3;
+    double ybr[3];
+    double rgb[3];
+    do
+      {
+      ybr[0] = cp[0] - ymin;
+      ybr[1] = cp[1] - 128.0;
+      ybr[2] = cp[2] - 128.0;
+
+      vtkMath::Multiply3x3(matrix, ybr, rgb);
+
+      rgb[0] = (rgb[0] >= 0.0 ? rgb[0] : 0.0);
+      rgb[0] = (rgb[0] <= 255.0 ? rgb[0] : 255.0);
+      rgb[1] = (rgb[1] >= 0.0 ? rgb[1] : 0.0);
+      rgb[1] = (rgb[1] <= 255.0 ? rgb[1] : 255.0);
+      rgb[2] = (rgb[2] >= 0.0 ? rgb[2] : 0.0);
+      rgb[2] = (rgb[2] <= 255.0 ? rgb[2] : 255.0);
+
+      cp[0] = static_cast<unsigned char>(vtkMath::Floor(rgb[0] + 0.5));
+      cp[1] = static_cast<unsigned char>(vtkMath::Floor(rgb[1] + 0.5));
+      cp[2] = static_cast<unsigned char>(vtkMath::Floor(rgb[2] + 0.5));
+
+      cp += 3;
+      }
+    while (--n);
+    }
+}
+
+//----------------------------------------------------------------------------
 void vtkDICOMReader::UnpackBits(
   const void *filePtr, void *buffer, vtkIdType bufferSize, int bits)
 {
@@ -1318,6 +1408,8 @@ bool vtkDICOMReader::ReadFileDelegated(
   unsigned char *buffer, vtkIdType bufferSize)
 {
 #if defined(DICOM_USE_DCMTK)
+  // For JPEG, DCMTK will do the YBR to RGB
+  this->NeedsYBRToRGB = false;
 
   DcmFileFormat *fileformat = new DcmFileFormat();
   fileformat->loadFile(filename);
@@ -1579,6 +1671,13 @@ int vtkDICOMReader::RequestData(
                    componentIdx*filePixelSize*numPlanes);
       }
 
+    // ReadOneFile will set NeedsYBRToRGB to false if it does YBR->RGB itself
+    // (note: NeedsYBRToRGB will is ignored unless PhotometricInterpretation
+    // is YBR_FULL* or YBR_PARTIAL*)
+    this->NeedsYBRToRGB = (this->AutoYBRToRGB &&
+                           numComponents == 3 &&
+                           scalarSize == 1);
+
     this->ComputeInternalFileName(fileIdx);
     this->ReadOneFile(this->InternalFileName, fileIdx,
                       bufferPtr, framesInFile*fileFrameSize);
@@ -1643,6 +1742,12 @@ int vtkDICOMReader::RequestData(
 
         planePtr += filePlaneSize;
         }
+
+      // convert to RGB if data was read from file as YUV
+      if (this->NeedsYBRToRGB)
+        {
+        this->YBRToRGB(fileIdx, frameIdx, slicePtr, sliceSize);
+        }
       }
     }
 
@@ -1704,10 +1809,13 @@ void vtkDICOMReader::UpdateMedicalImageProperties()
   vtkMatrix4x4 *matrix = this->PatientMatrix;
   vtkMedicalImageProperties *properties = this->MedicalImageProperties;
 
-  properties->SetPatientName(
-    meta->GetAttributeValue(DC::PatientName).GetCharData());
-  properties->SetPatientID(
-    meta->GetAttributeValue(DC::PatientID).GetCharData());
+  const vtkDICOMValue *vptr;
+  vptr = &meta->GetAttributeValue(DC::PatientName);
+  properties->SetPatientName(vptr->IsValid() ?
+    vptr->AsUTF8String().c_str() : NULL);
+  vptr = &meta->GetAttributeValue(DC::PatientID);
+  properties->SetPatientID(vptr->IsValid() ?
+    vptr->AsUTF8String().c_str() : NULL);
   properties->SetPatientAge(
     meta->GetAttributeValue(DC::PatientAge).GetCharData());
   properties->SetPatientSex(
@@ -1730,24 +1838,32 @@ void vtkDICOMReader::UpdateMedicalImageProperties()
     meta->GetAttributeValue(DC::InstanceNumber).GetCharData());
   properties->SetSeriesNumber(
     meta->GetAttributeValue(DC::SeriesNumber).GetCharData());
-  properties->SetSeriesDescription(
-    meta->GetAttributeValue(DC::SeriesDescription).GetCharData());
-  properties->SetStudyID(
-    meta->GetAttributeValue(DC::StudyID).GetCharData());
-  properties->SetStudyDescription(
-    meta->GetAttributeValue(DC::StudyDescription).GetCharData());
+  vptr = &meta->GetAttributeValue(DC::SeriesDescription);
+  properties->SetSeriesDescription(vptr->IsValid() ?
+    vptr->AsUTF8String().c_str() : NULL);
+  vptr = &meta->GetAttributeValue(DC::StudyID);
+  properties->SetStudyID(vptr->IsValid() ?
+    vptr->AsUTF8String().c_str() : NULL);
+  vptr = &meta->GetAttributeValue(DC::StudyDescription);
+  properties->SetStudyDescription(vptr->IsValid() ?
+    vptr->AsUTF8String().c_str() : NULL);
   properties->SetModality(
     meta->GetAttributeValue(DC::Modality).GetCharData());
-  properties->SetManufacturer(
-    meta->GetAttributeValue(DC::Manufacturer).GetCharData());
-  properties->SetManufacturerModelName(
-    meta->GetAttributeValue(DC::ManufacturerModelName).GetCharData());
-  properties->SetStationName(
-    meta->GetAttributeValue(DC::StationName).GetCharData());
-  properties->SetInstitutionName(
-    meta->GetAttributeValue(DC::InstitutionName).GetCharData());
-  properties->SetConvolutionKernel(
-    meta->GetAttributeValue(DC::ConvolutionKernel).GetCharData());
+  vptr = &meta->GetAttributeValue(DC::Manufacturer);
+  properties->SetManufacturer(vptr->IsValid() ?
+    vptr->AsUTF8String().c_str() : NULL);
+  vptr = &meta->GetAttributeValue(DC::ManufacturerModelName);
+  properties->SetManufacturerModelName(vptr->IsValid() ?
+    vptr->AsUTF8String().c_str() : NULL);
+  vptr = &meta->GetAttributeValue(DC::StationName);
+  properties->SetStationName(vptr->IsValid() ?
+    vptr->AsUTF8String().c_str() : NULL);
+  vptr = &meta->GetAttributeValue(DC::InstitutionName);
+  properties->SetInstitutionName(vptr->IsValid() ?
+    vptr->AsUTF8String().c_str() : NULL);
+  vptr = &meta->GetAttributeValue(DC::ConvolutionKernel);
+  properties->SetConvolutionKernel(vptr->IsValid() ?
+    vptr->AsUTF8String().c_str() : NULL);
   properties->SetSliceThickness(
     meta->GetAttributeValue(DC::SliceThickness).GetCharData());
   properties->SetKVP(

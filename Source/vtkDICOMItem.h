@@ -14,7 +14,7 @@
 #ifndef vtkDICOMItem_h
 #define vtkDICOMItem_h
 
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 #include "vtkDICOMDataElement.h"
 #include "vtkDICOMDictEntry.h"
 #include "vtkDICOMReferenceCount.h"
@@ -30,7 +30,7 @@ class vtkDICOMMetaData;
  *  essentially a data set of its own.  An item consists of
  *  zero or more data elements, each with a tag and value.
  */
-class VTK_DICOM_EXPORT vtkDICOMItem
+class VTKDICOM_EXPORT vtkDICOMItem
 {
 private:
 
@@ -56,6 +56,7 @@ private:
 
 public:
 
+  //@{
   //! Default constructor creates an empty item.
   vtkDICOMItem() : L(0) {}
 
@@ -85,11 +86,13 @@ public:
 
   //! Destructor does reference counting.
   ~vtkDICOMItem() { this->Clear(); }
+  //@}
 
+  //@{
   //! Clear the data.
   void Clear() {
     if (this->L && --(this->L->ReferenceCount) == 0) { this->FreeList(); }
-    else (this->L = 0); }
+    else { this->L = 0; } }
 
   //! Check if empty.
   bool IsEmpty() const { return (this->L == 0); }
@@ -97,7 +100,9 @@ public:
   //! Check if this was read as a delimited item.
   bool IsDelimited() const {
     return (this->L == 0 || this->L->Delimited != 0); }
+  //@}
 
+  //@{
   //! Add a data element to this item.
   /*!
    *  If you specify a string, it must either be an ASCII string, or it must
@@ -106,7 +111,9 @@ public:
   void SetAttributeValue(vtkDICOMTag tag, const vtkDICOMValue& v);
   void SetAttributeValue(vtkDICOMTag tag, double v);
   void SetAttributeValue(vtkDICOMTag tag, const std::string& v);
+  //@}
 
+  //@{
   //! Add a data element at the specified path.
   /*!
    *  The data element is inserted at the tail of the given path.  If the
@@ -117,11 +124,15 @@ public:
   void SetAttributeValue(const vtkDICOMTagPath& tag, const vtkDICOMValue& v);
   void SetAttributeValue(const vtkDICOMTagPath& tag, double v);
   void SetAttributeValue(const vtkDICOMTagPath& tag, const std::string& v);
+  //@}
 
+  //@{
   //! Get a data element from this item.
   const vtkDICOMValue &GetAttributeValue(vtkDICOMTag tag) const;
   const vtkDICOMValue &GetAttributeValue(const vtkDICOMTagPath &tag) const;
+  //@}
 
+  //@{
   //! Get the offset of this item from the beginning of the file.
   /*!
    *  Some DICOM files, such as DICOMDIR files, index into sequences via
@@ -130,7 +141,9 @@ public:
    */
   unsigned int GetByteOffset() const {
     return (this->L == 0 ? 0 : this->L->ByteOffset); }
+  //@}
 
+  //@{
   //! Get the number of data elements.
   int GetNumberOfDataElements() const {
     return (this->L ? this->L->NumberOfDataElements : 0); }
@@ -142,7 +155,9 @@ public:
   //! Get an end iterator for the list of data elements.
   vtkDICOMDataElementIterator End() const {
     return (this->L ? &this->L->Tail : 0); }
+  //@}
 
+  //@{
   //! Resolve a private tag, or return (ffff,ffff) if not resolved.
   /*!
    *  Private data elements are mobile, which means that different data
@@ -166,7 +181,9 @@ public:
    */
   vtkDICOMTag ResolvePrivateTagForWriting(
     vtkDICOMTag ptag, const std::string& creator);
+  //@}
 
+  //@{
   //! Look up a tag in the DICOM dictionary.
   /*!
    *  Unlike the method in vtkDICOMDictionary, this method can identify
@@ -177,11 +194,15 @@ public:
 
   //! Use the dictionary to get the VR, returns UN on failure.
   vtkDICOMVR FindDictVR(vtkDICOMTag tag) const;
+  //@}
 
+  //@{
   bool operator==(const vtkDICOMItem& o) const;
   bool operator!=(const vtkDICOMItem& o) const {
     return !(*this == o); }
+  //@}
 
+  //@{
   //! Assignment operator does reference counting.
   vtkDICOMItem &operator=(const vtkDICOMItem &o) {
     if (this->L != o.L) {
@@ -189,6 +210,7 @@ public:
       if (this->L && --(this->L->ReferenceCount) == 0) { this->FreeList(); }
       this->L = o.L; }
     return *this; }
+  //@}
 
 private:
   void FreeList();
@@ -213,3 +235,4 @@ private:
 };
 
 #endif /* vtkDICOMItem_h */
+// VTK-HeaderTest-Exclude: vtkDICOMItem.h

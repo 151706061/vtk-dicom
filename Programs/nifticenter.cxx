@@ -25,6 +25,7 @@
 #include <stdlib.h>
 
 // from dicomcli
+#include "vtkConsoleOutputWindow.h"
 #include "mainmacro.h"
 
 // remove path portion of filename
@@ -36,8 +37,11 @@ const char *basename(const char *filename)
 }
 
 // This program will convert
-MAINMACRO(argc, argv)
+int MAINMACRO(int argc, char *argv[])
 {
+  // redirect all VTK errors to stderr
+  vtkConsoleOutputWindow::Install();
+
   int rval = 0;
 
   if (argc < 2)

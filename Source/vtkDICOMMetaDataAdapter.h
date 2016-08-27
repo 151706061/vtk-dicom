@@ -14,7 +14,7 @@
 #ifndef vtkDICOMMetaDataAdapter_h
 #define vtkDICOMMetaDataAdapter_h
 
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 #include "vtkDICOMTag.h"
 
 class vtkDICOMMetaData;
@@ -29,15 +29,31 @@ class vtkDICOMValue;
  *  If constructed from a metadata object that is not an enhanced
  *  multi-frame dataset, it simply acts as a pass-through.
  */
-class VTK_DICOM_EXPORT vtkDICOMMetaDataAdapter
+class VTKDICOM_EXPORT vtkDICOMMetaDataAdapter
 {
 public:
+  //@{
   //! Construct an adapter for the given meta data object.
+  /*!
+   *  If the provided meta-data is from an enhanced multi-frame data set,
+   *  then the adapter will make it look like a series of data sets.  If
+   *  the provided meta-data is from a series of non-enhanced data sets,
+   *  the adapter will act as a simple pass-through.
+   */
   vtkDICOMMetaDataAdapter(vtkDICOMMetaData *meta);
+
+  //! Construct an adapter for one DICOM object instance.
+  /*!
+   *  If instance i of the provided meta-data is an enhanced multi-frame
+   *  data set, make it look like a series.
+   */
+  vtkDICOMMetaDataAdapter(vtkDICOMMetaData *meta, int i);
 
   //! Destructor release the reference to the meta data.
   ~vtkDICOMMetaDataAdapter();
+  //@}
 
+  //@{
   //! Get the number of instances (i.e. files).
   /*!
    *  For an enhanced multi-frame data set, this will return the
@@ -45,7 +61,9 @@ public:
    *  the number of instances in the series.
    */
   int GetNumberOfInstances() const { return this->NumberOfInstances; }
+  //@}
 
+  //@{
   //! Check whether an attribute is present in the metadata.
   /*!
    *  For an enhanced multi-frame data set, this will search the Shared
@@ -76,10 +94,17 @@ public:
    *  data set attributes.
    */
   vtkDICOMTag ResolvePrivateTag(vtkDICOMTag ptag, const std::string& creator);
+  //@}
 
+  //@{
   //! Make the adapter look like a pointer (for convenience).
   const vtkDICOMMetaDataAdapter* operator->() const { return this; }
   vtkDICOMMetaDataAdapter* operator->() { return this; }
+  //@}
+
+protected:
+  //! Helper function for the constructors.  Set all members.
+  void ConstructionHelper(vtkDICOMMetaData *meta, int i);
 
 private:
 
@@ -88,6 +113,8 @@ private:
   const vtkDICOMValue *Shared;
   vtkDICOMValue *NullValue;
   int NumberOfInstances;
+  int MetaInstance;
 };
 
 #endif /* vtkDICOMMetaDataAdapter_h */
+// VTK-HeaderTest-Exclude: vtkDICOMMetaDataAdapter.h

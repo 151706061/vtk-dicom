@@ -21,12 +21,12 @@
 #define vtkDICOMLookupTable_h
 
 #include <vtkLookupTable.h>
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 class vtkDICOMMetaData;
 
 //----------------------------------------------------------------------------
-class VTK_DICOM_EXPORT vtkDICOMLookupTable : public vtkLookupTable
+class VTKDICOM_EXPORT vtkDICOMLookupTable : public vtkLookupTable
 {
 public:
   // Description:

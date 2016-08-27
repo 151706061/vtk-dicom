@@ -11,7 +11,7 @@
      PURPOSE.  See the above copyright notice for more information.
 
 =========================================================================*/
-// .NAME vtkDICOMApplyPalette - Apply palette to PALETTE_COLOR images
+// .NAME vtkDICOMApplyPalette - Apply palette to PALETTE COLOR images
 // .SECTION Description
 // If an image contains a palette LUT, then this filter will apply that
 // LUT to the image and produce an RGB image.  Images without a palette
@@ -24,17 +24,15 @@
 #define vtkDICOMApplyPalette_h
 
 #include "vtkDICOMAlgorithm.h"
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 class vtkDICOMMetaData;
 class vtkDICOMPerFilePalette;
 
 //----------------------------------------------------------------------------
-class VTK_DICOM_EXPORT vtkDICOMApplyPalette : public vtkDICOMAlgorithm
+class VTKDICOM_EXPORT vtkDICOMApplyPalette : public vtkDICOMAlgorithm
 {
 public:
-  // Description:
-  // Static method for construction.
   static vtkDICOMApplyPalette *New();
   vtkTypeMacro(vtkDICOMApplyPalette, vtkDICOMAlgorithm);
 

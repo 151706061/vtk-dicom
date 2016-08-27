@@ -21,9 +21,18 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include <algorithm>
 #include <iostream>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 typedef vtkDICOMVR VR;
+
+// Prototype for function that reads one query key
+bool dicomcli_readkey_query(
+  const char *cp, vtkDICOMItem *query, QueryTagList *ql, bool qfile);
 
 // Build a tagpath
 vtkDICOMTagPath path_append(const vtkDICOMTagPath& tpath, vtkDICOMTag tag)
@@ -52,7 +61,15 @@ vtkDICOMTagPath path_append(const vtkDICOMTagPath& tpath, vtkDICOMTag tag)
 bool dicomcli_readquery(
   const char *fname, vtkDICOMItem *query, QueryTagList *ql)
 {
+#ifdef _WIN32
+  int cn = MultiByteToWideChar(CP_UTF8, 0, fname, -1, NULL, 0);
+  wchar_t *wfname = new wchar_t[cn];
+  MultiByteToWideChar(CP_UTF8, 0, fname, -1, wfname, cn);
+  ifstream f(wfname);
+  delete [] wfname;
+#else
   ifstream f(fname);
+#endif
   if (!f.good())
     {
     return false;
@@ -88,7 +105,7 @@ bool dicomcli_readquery(
       continue;
       }
 
-    if (!dicomcli_readkey(cp, query, ql))
+    if (!dicomcli_readkey_query(cp, query, ql, true))
       {
       fprintf(stderr, "Error %s line %d:\n", fname, lineNumber);
       return false;
@@ -98,8 +115,9 @@ bool dicomcli_readquery(
   return true;
 }
 
-bool dicomcli_readkey(
-  const char *cp, vtkDICOMItem *query, QueryTagList *ql)
+// If qfile is true, then key is being read from a query file
+bool dicomcli_readkey_query(
+  const char *cp, vtkDICOMItem *query, QueryTagList *ql, bool qfile)
 {
   // read the tag path
   vtkDICOMTagPath tagPath;
@@ -123,7 +141,7 @@ bool dicomcli_readkey(
         }
       if (s == n)
         {
-        fprintf(stderr, "Block is missing the final \"]\".\n");
+        fprintf(stderr, "Error: Block is missing the final \"]\".\n");
         tagError = true;
         continue;
         }
@@ -176,7 +194,7 @@ bool dicomcli_readkey(
         }
       else
         {
-        fprintf(stderr, "Unrecognized key %s\n", key.c_str());
+        fprintf(stderr, "Error: Unrecognized key %s\n", key.c_str());
         tagError = true;
         continue;
         }
@@ -244,7 +262,7 @@ bool dicomcli_readkey(
         {
         int m = static_cast<int>(vrEnd - lineStart);
         m = (m > 40 ? 40 : m);
-        fprintf(stderr, "Unrecognized DICOM VR \"%*.*s\"\n",
+        fprintf(stderr, "Error: Unrecognized DICOM VR \"%*.*s\"\n",
            m, m, &cp[lineStart]);
         return false;
         }
@@ -286,7 +304,7 @@ bool dicomcli_readkey(
       {
       int m = static_cast<int>(vrEnd - lineStart);
       m = (m > 40 ? 40 : m);
-      fprintf(stderr, "VR of \"%*.*s\" doesn't match dictionary VR of %s\n",
+      fprintf(stderr, "Error: VR of \"%*.*s\" doesn't match dict VR of %s\n",
          m, m, &cp[lineStart], dictvr.GetText());
       }
     }
@@ -295,7 +313,7 @@ bool dicomcli_readkey(
     {
     int m = static_cast<int>(s - lineStart);
     m = (m > 40 ? 40 : m);
-    fprintf(stderr, "Unrecognized DICOM tag \"%*.*s\"\n",
+    fprintf(stderr, "Error: Unrecognized DICOM tag \"%*.*s\"\n",
             m, m, &cp[lineStart]);
     return false;
     }
@@ -304,12 +322,14 @@ bool dicomcli_readkey(
   size_t valueStart = s;
   size_t valueEnd = s;
   bool valueContainsQuotes = false;
+  bool keyHasAssignment = false;
   if (s < n && cp[s] == '=')
     {
+    keyHasAssignment = true;
     s++;
     valueStart = s;
     valueEnd = s;
-    if (s < n && cp[s] == '\"')
+    if (s < n && qfile && cp[s] == '\"')
       {
       char delim = cp[s++];
       valueStart = s;
@@ -338,22 +358,22 @@ bool dicomcli_readkey(
       }
     else
       {
-      while (s < n && !isspace(cp[s]))
+      while (s < n && (!qfile || !isspace(cp[s])))
         {
         s++;
         }
       valueEnd = s;
       }
     }
-  else if (s < n && !isspace(cp[s]))
+  else if (s < n && (!qfile || !isspace(cp[s])))
     {
     if (isgraph(cp[s]))
       {
-      fprintf(stderr, "Illegal character \"%c\" after tag.\n", cp[s]);
+      fprintf(stderr, "Error: Illegal character \"%c\" after tag.\n", cp[s]);
       }
     else
       {
-      fprintf(stderr, "Illegal character after tag.\n");
+      fprintf(stderr, "Error: Illegal character after tag.\n");
       }
     return false;
     }
@@ -361,8 +381,12 @@ bool dicomcli_readkey(
   // add the tag and value to the query data set
   if (valueStart == valueEnd)
     {
-    // empty value (always matches, always retrieved)
-    query->SetAttributeValue(tagPath, vtkDICOMValue(vr));
+    // only overwrite previous value if '=' was explicitly used
+    if (keyHasAssignment || !query->GetAttributeValue(tagPath).IsValid())
+      {
+      // empty value (always matches, always retrieved)
+      query->SetAttributeValue(tagPath, vtkDICOMValue(vr));
+      }
     }
   else if (valueContainsQuotes)
     {
@@ -384,11 +408,189 @@ bool dicomcli_readkey(
       vtkDICOMValue(vr, &cp[valueStart], valueEnd - valueStart));
     }
 
-  // add the tag path to the list
+  // add the tag path to the list, if it isn't already there
   if (ql)
     {
-    ql->push_back(tagPath);
+    if (std::find(ql->begin(), ql->end(), tagPath) == ql->end())
+      {
+      ql->push_back(tagPath);
+      }
     }
 
   return !tagError;
+}
+
+bool dicomcli_readkey(
+  const char *cp, vtkDICOMItem *query, QueryTagList *ql)
+{
+  return dicomcli_readkey_query(cp, query, ql, false);
+}
+
+bool dicomcli_looks_like_key(const char *cp)
+{
+  size_t s = 0;
+  size_t l = 0;
+
+  // Look for private dictionary specifier in square brackets
+  if (*cp == '[')
+    {
+    while (cp[l] != ']' && cp[l] != '\0')
+      {
+      l++;
+      }
+    if (cp[l] == ']')
+      {
+      l++;
+      s = l;
+      }
+    else
+      {
+      return false;
+      }
+    }
+
+  // Look for hexadecimal tag
+  bool istag = true;
+  size_t commas = 0;
+  size_t digitrun = 0;
+  while (cp[l] != '\0' && cp[l] != ':' && cp[l] != '=')
+    {
+    if (cp[l] == ',')
+      {
+      commas++;
+      if (digitrun > 4)
+        {
+        istag = false;
+        }
+      digitrun = 0;
+      }
+    else if (isxdigit(cp[l]))
+      {
+      digitrun++;
+      }
+    else
+      {
+      istag = false;
+      }
+    l++;
+    }
+  if (istag && digitrun > 0 &&
+      ((commas == 0 && digitrun <= 8) ||
+       (commas == 1 && digitrun <= 4)))
+    {
+    return true;
+    }
+
+  // Look for dictionary key
+  if (l != s)
+    {
+    std::string key(&cp[s], l - s);
+    std::string creator;
+    if (s > 0)
+      {
+      creator = std::string(&cp[1], s-2);
+      }
+    vtkDICOMDictEntry de =
+      vtkDICOMDictionary::FindDictEntry(key.c_str(), creator.c_str());
+    if (de.IsValid())
+      {
+      return true;
+      }
+    }
+
+  return false;
+}
+
+bool dicomcli_readuids(
+  const char *fname, vtkDICOMItem *query, QueryTagList *ql)
+{
+#ifdef _WIN32
+  int cn = MultiByteToWideChar(CP_UTF8, 0, fname, -1, NULL, 0);
+  wchar_t *wfname = new wchar_t[cn];
+  MultiByteToWideChar(CP_UTF8, 0, fname, -1, wfname, cn);
+  ifstream f(wfname);
+  delete [] wfname;
+#else
+  ifstream f(fname);
+#endif
+  if (!f.good())
+    {
+    return false;
+    }
+
+  // Basic file structure:
+  // # one or more comments
+  // GGGG,EEEE   # a tag or key (only one)
+  // 1.185.234   # a UID, followed by more UIDs
+
+  QueryTagList ql2;
+  std::string val;
+  int lineNumber = 0;
+  while (f.good())
+    {
+    std::string line;
+    std::getline(f, line);
+    const char *cp = line.c_str();
+    size_t n = line.size();
+    lineNumber++;
+
+    // strip leading whitespace
+    size_t s = 0;
+    while (s < n && isspace(cp[s]))
+      {
+      s++;
+      }
+
+    // skip trailing whitespace
+    if (n > s && isspace(cp[n-1]))
+      {
+      --n;
+      }
+
+    // skip line if it is a comment
+    if (s == n || cp[s] == '#')
+      {
+      continue;
+      }
+
+    if (ql2.size() == 0)
+      {
+      // get the tag line, if not gotten yet
+      if (!dicomcli_readkey_query(cp, query, &ql2, true))
+        {
+        fprintf(stderr, "Error %s line %d: ", fname, lineNumber);
+        fprintf(stderr, "Need Valid DICOM tag at top of file.\n");
+        return false;
+        }
+      }
+    else
+      {
+      // read and append a value
+      if (val.length() > 0)
+        {
+        val.append("\\", 1);
+        }
+      val.append(&cp[s], n-s);
+      if (val.length() >= 65535)
+        {
+        fprintf(stderr, "Error %s line %d: ", fname, lineNumber);
+        fprintf(stderr, "Too many values (there is a 65535 byte limit)\n");
+        return false;
+        }
+      }
+    }
+
+  if (ql2.size() > 0)
+    {
+    // add the key and value to the query
+    vtkDICOMTagPath tagPath = ql2[0];
+    query->SetAttributeValue(tagPath, val);
+
+    if (ql && std::find(ql->begin(), ql->end(), tagPath) == ql->end())
+      {
+      ql->push_back(tagPath);
+      }
+    }
+
+  return true;
 }

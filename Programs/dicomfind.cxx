@@ -2,7 +2,7 @@
 
   Program: DICOM for VTK
 
-  Copyright (c) 2012-2015 David Gobbi
+  Copyright (c) 2012-2016 David Gobbi
   All rights reserved.
   See Copyright.txt or http://dgobbi.github.io/bsd3.txt for details.
 
@@ -12,6 +12,7 @@
 
 =========================================================================*/
 
+#include "vtkDICOMConfig.h"
 #include "vtkDICOMDirectory.h"
 #include "vtkDICOMMetaData.h"
 #include "vtkDICOMItem.h"
@@ -19,6 +20,7 @@
 #include "vtkDICOMMetaData.h"
 
 // from dicomcli
+#include "vtkConsoleOutputWindow.h"
 #include "mainmacro.h"
 #include "readquery.h"
 
@@ -32,6 +34,7 @@
 #include <errno.h>
 #else
 // includes for spawn
+#include <windows.h>
 #include <process.h>
 #include <errno.h>
 // include for getcwd
@@ -43,14 +46,13 @@
 #include <stdlib.h>
 
 #include <limits>
-#include <iostream>
 
 // print the version
 void dicomfind_version(FILE *file, const char *cp)
 {
   fprintf(file, "%s %s\n", cp, DICOM_VERSION);
   fprintf(file, "\n"
-    "Copyright (c) 2012-2015, David Gobbi.\n\n"
+    "Copyright (c) 2012-2016, David Gobbi.\n\n"
     "This software is distributed under an open-source license.  See the\n"
     "Copyright.txt file that comes with the vtk-dicom source distribution.\n");
 }
@@ -65,6 +67,7 @@ void dicomfind_usage(FILE *file, const char *cp)
     "  -P              Do not follow symbolic links.\n"
     "  -k tag=value    Provide an attribute to be queried and matched.\n"
     "  -q <query.txt>  Provide a file to describe the find query.\n"
+    "  -u <uids.txt>   Provide a file that contains a list of UIDs.\n"
     "  -maxdepth n     Set the maximum directory depth.\n"
     "  -name pattern   Set a pattern to match (with \"*\" or \"?\").\n"
     "  -image          Restrict the search to files with PixelData.\n"
@@ -212,13 +215,32 @@ bool execute_command(const char *command, char *argv[])
   return true;
 }
 #else
-bool execute_command(const char *command, char *argv[])
+bool execute_command(const char *, char *argv[])
 {
+  bool rval = true;
+
   // flush the output
   fflush(stdout);
   fflush(stderr);
 
-  if (_spawnvp(_P_WAIT, command, argv) != 0)
+  int m = 0;
+  while (argv[m] != 0)
+    {
+    m++;
+    }
+
+  wchar_t **wargv = new wchar_t *[m + 1];
+
+  for (int i = 0; i < m; i++)
+    {
+    int n = MultiByteToWideChar(CP_UTF8, 0, argv[i], -1, NULL, 0);
+    wargv[i] = new wchar_t[n];
+    MultiByteToWideChar(CP_UTF8, 0, argv[i], -1, wargv[i], n);
+    }
+
+  wargv[m] = 0;
+
+  if (_wspawnvp(_P_WAIT, wargv[0], wargv) != 0)
     {
     if (errno == ENOENT)
       {
@@ -241,10 +263,16 @@ bool execute_command(const char *command, char *argv[])
       fprintf(stderr, "Unknown error while running command: %s\n", argv[0]);
       }
 
-    return false;
+    rval = false;
     }
 
-  return true;
+  for (int i = 0; i < m; i++)
+    {
+    delete [] wargv[i];
+    }
+  delete [] wargv;
+
+  return rval;
 }
 #endif
 
@@ -257,7 +285,12 @@ int dicomfind_chdir(const char *dirname)
 int dicomfind_chdir(const char *dirname)
 {
   // use _wchdir to allow paths longer than the 260 char limit
-  return _chdir(dirname);
+  int n = MultiByteToWideChar(CP_UTF8, 0, dirname, -1, NULL, 0);
+  wchar_t *wp = new wchar_t[n];
+  MultiByteToWideChar(CP_UTF8, 0, dirname, -1, wp, n);
+  int rval = _wchdir(wp);
+  delete [] wp;
+  return rval;
 }
 #endif
 
@@ -270,8 +303,16 @@ std::string dicomfind_getcwd()
 #else
 std::string dicomfind_getcwd()
 {
-  char buffer[2048];
-  return _getcwd(buffer, sizeof(buffer));
+  wchar_t wbuffer[2048];
+  wchar_t *wp = _wgetcwd(wbuffer, sizeof(wbuffer)/sizeof(wchar_t));
+  int n = WideCharToMultiByte(
+    CP_UTF8, 0, wp, -1, NULL, 0, NULL, NULL);
+  char *cp = new char[n];
+  WideCharToMultiByte(
+    CP_UTF8, 0, wp, -1, cp, n, NULL, NULL);
+  std::string s = cp;
+  delete [] cp;
+  return s;
 }
 #endif
 
@@ -298,10 +339,10 @@ void dicomfind_operations(
       char endchar = (op->Type == "-print0" ? '\0' : '\n');
       for (int kk = 0; kk < sa->GetNumberOfValues(); kk++)
         {
-        std::cout << sa->GetValue(kk);
-        std::cout.put(endchar);
+        fprintf(stdout, "%s", sa->GetValue(kk).c_str());
+        fputc(endchar, stdout);
         }
-      std::cout.flush();
+      fflush(stdout);
       }
     else if (op->Type == "-exec" || op->Type == "-execdir")
       {
@@ -311,7 +352,7 @@ void dicomfind_operations(
       size_t subcount = 0;
       for (size_t jj = 0; jj < op->Args.size(); jj++)
         {
-        subcount += (op->Args[jj] == "{}");
+        subcount += (op->Args[jj].find("{}") != std::string::npos);
         }
 
       // remember the current subdirectory
@@ -324,27 +365,37 @@ void dicomfind_operations(
           {
           size_t sub_argc = op->Args.size() + subcount - 1;
           char **sub_argv = new char *[sub_argc+1];
+          std::vector<std::string> temp_args(subcount);
+          size_t subc = 0;
 
           size_t ii = 0;
           size_t nn = op->Args.size()-1;
           for (size_t jj = 0; jj < nn; jj++)
             {
-            if (op->Args[jj] == "{}")
+            const std::string& arg = op->Args[jj];
+            size_t pos = arg.find("{}");
+            if (pos != std::string::npos)
               {
+              const char *sub = sa->GetValue(kk).c_str();
               if (execdir)
                 {
-                sub_argv[ii++] = const_cast<char *>(
-                  dicomfind_basename(sa->GetValue(kk).c_str()));
+                sub = dicomfind_basename(sub);
                 }
-              else
+
+              std::string& temp_arg = temp_args[subc++];
+              temp_arg = arg;
+              do
                 {
-                sub_argv[ii++] = const_cast<char *>(
-                  sa->GetValue(kk).c_str());
+                temp_arg.replace(pos, 2, sub);
+                pos = temp_arg.find("{}", pos + strlen(sub));
                 }
+              while (pos != std::string::npos);
+
+              sub_argv[ii++] = const_cast<char *>(temp_arg.c_str());
               }
             else
               {
-              sub_argv[ii++] = const_cast<char *>(op->Args[jj].c_str());
+              sub_argv[ii++] = const_cast<char *>(arg.c_str());
               }
             }
           sub_argv[ii] = 0;
@@ -382,11 +433,13 @@ void dicomfind_operations(
         size_t sub_argc = op->Args.size() +
           subcount*sa->GetNumberOfTuples() - 1;
         char **sub_argv = new char *[sub_argc+1];
+        std::vector<std::string> temp_args(subcount*sa->GetNumberOfValues());
+        size_t subc = 0;
 
         // for execdir, keep a list of directories that are done
         std::vector<std::string> done_dirs;
         std::string doing_dir;
-        
+
         bool notdone = true;
 
         while (notdone)
@@ -433,33 +486,40 @@ void dicomfind_operations(
           size_t nn = op->Args.size()-1;
           for (size_t jj = 0; jj < nn; jj++)
             {
-            if (op->Args[jj] == "{}")
+            const std::string& arg = op->Args[jj];
+            size_t pos = arg.find("{}");
+            if (pos != std::string::npos)
               {
-              if (execdir)
+              for (vtkIdType kk = 0; kk < sa->GetNumberOfValues(); kk++)
                 {
-                for (vtkIdType kk = 0; kk < sa->GetNumberOfValues(); kk++)
+                const char *sub = sa->GetValue(kk).c_str();
+
+                if (execdir)
                   {
-                  std::string dirname =
-                    dicomfind_dirname(sa->GetValue(kk).c_str());
-                  if (dirname == doing_dir)
+                  std::string dirname = dicomfind_dirname(sub);
+                  if (dirname != doing_dir)
                     {
-                    sub_argv[ii++] = const_cast<char *>(
-                      dicomfind_basename(sa->GetValue(kk).c_str()));
+                    continue;
                     }
+                  sub = dicomfind_basename(sub);
                   }
-                }
-              else
-                {
-                for (vtkIdType kk = 0; kk < sa->GetNumberOfValues(); kk++)
+
+                std::string& temp_arg = temp_args[subc++];
+                temp_arg = arg;
+                pos = temp_arg.find("{}");
+                do
                   {
-                  sub_argv[ii++] = const_cast<char *>(
-                    sa->GetValue(kk).c_str());
+                  temp_arg.replace(pos, 2, sub);
+                  pos = temp_arg.find("{}", pos + strlen(sub));
                   }
+                while (pos != std::string::npos);
+
+                sub_argv[ii++] = const_cast<char *>(temp_arg.c_str());
                 }
               }
             else
               {
-              sub_argv[ii++] = const_cast<char *>(op->Args[jj].c_str());
+              sub_argv[ii++] = const_cast<char *>(arg.c_str());
               }
             }
           sub_argv[ii] = 0;
@@ -490,9 +550,15 @@ void dicomfind_operations(
     }
 }
 
+// Delay wildcard expansion for -name option
+MAINMACRO_PASSTHROUGH(-name);
+
 // This program will dump all the metadata in the given file
-MAINMACRO(argc, argv)
+int MAINMACRO(int argc, char *argv[])
 {
+  // redirect all VTK errors to stderr
+  vtkConsoleOutputWindow::Install();
+
   std::vector<Operation> operationList;
 
   int rval = 0;
@@ -505,6 +571,9 @@ MAINMACRO(argc, argv)
   bool findSeries = false;
 
   vtkSmartPointer<vtkStringArray> a = vtkSmartPointer<vtkStringArray>::New();
+
+  // always query SpecificCharacterSet
+  query.SetAttributeValue(DC::SpecificCharacterSet, vtkDICOMValue(VR::CS));
 
   // always query the functional sequences for advanced files
   query.SetAttributeValue(
@@ -551,6 +620,21 @@ MAINMACRO(argc, argv)
       if (!dicomcli_readquery(qfile, &query, &qtlist))
         {
         fprintf(stderr, "Can't read query file %s\n\n", qfile);
+        return 1;
+        }
+      }
+    else if (strcmp(arg, "-u") == 0)
+      {
+      if (argi + 1 == argc || argv[argi+1][0] == '-')
+        {
+        fprintf(stderr, "Error: %s must be followed by a file.\n\n", arg);
+        dicomfind_usage(stderr, dicomfind_basename(argv[0]));
+        return 1;
+        }
+      const char *qfile = argv[++argi];
+      if (!dicomcli_readuids(qfile, &query, &qtlist))
+        {
+        fprintf(stderr, "Error: Can't read uid file %s\n\n", qfile);
         return 1;
         }
       }

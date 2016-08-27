@@ -2,7 +2,7 @@
 
   Program: DICOM for VTK
 
-  Copyright (c) 2012-2015 David Gobbi
+  Copyright (c) 2012-2016 David Gobbi
   All rights reserved.
   See Copyright.txt or http://dgobbi.github.io/bsd3.txt for details.
 
@@ -12,6 +12,7 @@
 
 =========================================================================*/
 
+#include "vtkDICOMConfig.h"
 #include "vtkDICOMBuild.h"
 #include "vtkDICOMDictionary.h"
 #include "vtkDICOMMetaData.h"
@@ -20,6 +21,9 @@
 #include "vtkDICOMFileSorter.h"
 #include "vtkDICOMToRAS.h"
 #include "vtkDICOMCTRectifier.h"
+#include "vtkDICOMFile.h"
+#include "vtkDICOMFileDirectory.h"
+#include "vtkDICOMFilePath.h"
 #include "vtkNIFTIHeader.h"
 #include "vtkNIFTIWriter.h"
 
@@ -39,10 +43,6 @@
 #include <vtkImageHistogramStatistics.h>
 #endif
 
-#include <vtksys/SystemTools.hxx>
-#include <vtksys/Directory.hxx>
-#include <vtksys/Glob.hxx>
-
 #include <string>
 #include <vector>
 #include <set>
@@ -53,6 +53,7 @@
 #include <ctype.h>
 
 // from dicomcli
+#include "vtkConsoleOutputWindow.h"
 #include "mainmacro.h"
 
 // Simple structure for command-line options
@@ -86,7 +87,7 @@ void dicomtonifti_version(FILE *file, const char *command_name, bool verbose)
     {
     fprintf(file, "%s %s\n", cp, DICOM_VERSION);
     fprintf(file, "\n"
-      "Copyright (c) 2012-2015, David Gobbi.\n\n"
+      "Copyright (c) 2012-2016, David Gobbi.\n\n"
       "This software is distributed under an open-source license.  See the\n"
       "Copyright.txt file that comes with the vtk-dicom source distribution.\n");
     }
@@ -258,60 +259,6 @@ void dicomtonifti_check_error(vtkObject *o)
     }
 
   exit(1);
-}
-
-// Add a dicom file to the list, expand if wildcard
-void dicomtonifti_add_file(vtkStringArray *files, const char *filepath)
-{
-#ifdef _WIN32
-  bool ispattern = false;
-  bool hasbackslash = false;
-  size_t n = strlen(filepath);
-  for (size_t i = 0; i < n; i++)
-    {
-    if (filepath[i] == '*' || filepath[i] == '?' || filepath[i] == '[')
-      {
-      ispattern = true;
-      }
-    if (filepath[i] == '\\')
-      {
-      hasbackslash = true;
-      }
-    }
-
-  std::string newpath = filepath;
-  if (hasbackslash)
-    {
-    // backslashes interfere with vtksys::Glob
-    vtksys::SystemTools::ConvertToUnixSlashes(newpath);
-    }
-  filepath = newpath.c_str();
-
-  if (ispattern)
-    {
-    vtksys::Glob glob;
-    if (glob.FindFiles(filepath))
-      {
-      const std::vector<std::string> &globfiles = glob.GetFiles();
-      size_t m = globfiles.size();
-      for (size_t j = 0; j < m; j++)
-        {
-        files->InsertNextValue(globfiles[j]);
-        }
-      }
-    else
-      {
-      fprintf(stderr, "Could not match pattern: %s\n", filepath);
-      exit(1);
-      }
-    }
-  else
-    {
-    files->InsertNextValue(filepath);
-    }
-#else
-  files->InsertNextValue(filepath);
-#endif
 }
 
 // Read the options
@@ -495,13 +442,13 @@ void dicomtonifti_read_options(
       }
     else
       {
-      dicomtonifti_add_file(files, arg);
+      files->InsertNextValue(arg);
       }
     }
 
   while (argi < argc)
     {
-    dicomtonifti_add_file(files, argv[argi++]);
+    files->InsertNextValue(argv[argi++]);
     }
 }
 
@@ -993,10 +940,9 @@ void dicomtonifti_convert_files(
     if (options->compress)
       {
       size_t os = strlen(outpath);
-      if (os > 2 &&
-          (outpath[os-3] != '.' ||
-           tolower(outpath[os-2]) != 'g' ||
-           tolower(outpath[os-1]) != 'z'))
+      if (os < 3 || outpath[os-3] != '.' ||
+          tolower(outpath[os-2]) != 'g' ||
+          tolower(outpath[os-1]) != 'z')
         {
         outfile.append(".gz");
         }
@@ -1031,7 +977,11 @@ void dicomtonifti_convert_files(
         std::string outfile =
           dicomtonifti_make_filename(outpath, meta);
 
-        if (options->compress)
+        size_t os = outfile.length();
+        if (options->compress &&
+            (os < 3 || outfile[os-3] != '.' ||
+             tolower(outfile[os-2]) != 'g' ||
+             tolower(outfile[os-1]) != 'z'))
           {
           outfile.append(".gz");
           }
@@ -1039,9 +989,11 @@ void dicomtonifti_convert_files(
         // make the directory for the file
         if (k == sorter->GetFirstSeriesForStudy(j))
           {
-          std::string dirname = vtksys::SystemTools::GetParentDirectory(
-            outfile.c_str());
-          if (!vtksys::SystemTools::MakeDirectory(dirname.c_str()))
+          vtkDICOMFilePath path(outfile);
+          path.PopBack();
+          std::string dirname = path.AsString();
+          int code = vtkDICOMFileDirectory::Create(dirname.c_str());
+          if (code != vtkDICOMFileDirectory::Good)
             {
             fprintf(stderr, "Cannot create directory: %s\n",
                     dirname.c_str());
@@ -1075,14 +1027,14 @@ void dicomtonifti_files_and_dirs(
   for (vtkIdType i = 0; i < n; i++)
     {
     std::string fname = files->GetValue(i);
+    vtkDICOMFilePath path(fname);
     size_t m = fname.size();
     if ((m > 1 && (fname[m-1] == '/' || fname[m-1] == '\\')) ||
-        vtksys::SystemTools::FileIsDirectory(fname.c_str()))
+        path.IsDirectory())
       {
       if (pastdirs->size() == 0 ||
           (options->recurse &&
-           (options->follow_symlinks ||
-            !vtksys::SystemTools::FileIsSymlink(fname.c_str()))))
+           (options->follow_symlinks || !path.IsSymlink())))
         {
         directories->InsertNextValue(fname.c_str());
         }
@@ -1099,35 +1051,35 @@ void dicomtonifti_files_and_dirs(
     }
 
   n = directories->GetNumberOfValues();
-  vtksys::Directory directory;
-  std::vector<std::string> pathparts;
   for (vtkIdType i = 0; i < n; i++)
     {
     std::string dirname = directories->GetValue(i);
+    vtkDICOMFilePath path(dirname);
 
     // avoid infinite recursion
-    std::string realpath = vtksys::SystemTools::GetRealPath(dirname.c_str());
+    std::string realpath = path.GetRealPath();
     if (pastdirs->count(realpath)) { continue; }
     pastdirs->insert(pastdirs->end(), realpath);
 
-    if (!directory.Load(dirname.c_str()))
+    vtkDICOMFileDirectory directory(dirname.c_str());
+    int code = directory.GetError();
+    if (code != vtkDICOMFileDirectory::Good)
       {
       fprintf(stderr, "Could not open directory %s\n", dirname.c_str());
       }
     else
       {
       files->Initialize();
-      vtksys::SystemTools::SplitPath(directory.GetPath(), pathparts);
       unsigned long nf = directory.GetNumberOfFiles();
       for (unsigned long j = 0; j < nf; j++)
         {
         const char *dirfile = directory.GetFile(j);
-        if (dirfile[0] != '.')
+        if (dirfile[0] != '.' || (dirfile[1] != '\0' &&
+            (dirfile[1] != '.' || dirfile[2] != '\0')))
           {
-          pathparts.push_back(dirfile);
-          std::string fullpath = vtksys::SystemTools::JoinPath(pathparts);
-          files->InsertNextValue(fullpath);
-          pathparts.pop_back();
+          path.PushBack(dirfile);
+          files->InsertNextValue(path.AsString());
+          path.PopBack();
           }
         }
       dicomtonifti_files_and_dirs(options, files, outpath, pastdirs);
@@ -1136,8 +1088,11 @@ void dicomtonifti_files_and_dirs(
 }
 
 // This program will convert DICOM to NIFTI
-MAINMACRO(argc, argv)
+int MAINMACRO(int argc, char *argv[])
 {
+  // redirect all VTK errors to stderr
+  vtkConsoleOutputWindow::Install();
+
   // for the list of input DICOM files
   vtkSmartPointer<vtkStringArray> files =
     vtkSmartPointer<vtkStringArray>::New();
@@ -1158,21 +1113,16 @@ MAINMACRO(argc, argv)
     exit(1);
     }
 
-  bool isDirectory = vtksys::SystemTools::FileIsDirectory(outpath);
+  int code = vtkDICOMFile::Access(outpath, vtkDICOMFile::In);
   size_t l = strlen(outpath);
-  std::string tmp;
-  if (options.batch && isDirectory)
+  vtkDICOMFilePath tmp(outpath);
+  if (options.batch && code == vtkDICOMFile::FileIsDirectory)
     {
-    std::vector<std::string> sv;
-    vtksys::SystemTools::SplitPath(outpath, sv);
-
-    sv.push_back(
+    tmp.PushBack(
       "{PatientID}-{StudyDate}-{SeriesDescription}-{SeriesNumber}.nii");
-
-    tmp = vtksys::SystemTools::JoinPath(sv);
-    outpath = tmp.c_str();
+    outpath = tmp.AsString().c_str();
     }
-  else if (!options.batch && (isDirectory ||
+  else if (!options.batch && (code == vtkDICOMFile::FileIsDirectory ||
            (l > 0 && (outpath[l-1] == '/' || outpath[l-1] == '\\'))))
     {
     fprintf(stderr, "The -o option must give a file, not a directory.\n");

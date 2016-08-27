@@ -3,9 +3,9 @@ set(DICOM_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
 set(DICOM_BUILD_TESTING ${BUILD_TESTING})
 set(DICOM_USE_GDCM ${USE_GDCM})
 set(DICOM_USE_DCMTK ${USE_DCMTK})
-configure_file(${DICOM_SOURCE_DIR}/CMake/vtkDICOMConfig.h.in
+configure_file(${DICOM_CMAKE_DIR}/vtkDICOMConfig.h.in
   "${CMAKE_CURRENT_BINARY_DIR}/vtkDICOMConfig.h" @ONLY)
-configure_file(${DICOM_SOURCE_DIR}/CMake/vtkDICOMBuild.h.in
+configure_file(${DICOM_CMAKE_DIR}/vtkDICOMBuild.h.in
   "${CMAKE_CURRENT_BINARY_DIR}/vtkDICOMBuild.h" @ONLY)
 
 # Include directories
@@ -24,7 +24,9 @@ endif()
 set(LIB_SRCS
   vtkDICOMMetaData.cxx
   vtkDICOMDictionary.cxx
+  vtkDICOMFilePath.cxx
   vtkDICOMFile.cxx
+  vtkDICOMFileDirectory.cxx
   vtkDICOMTag.cxx
   vtkDICOMTagPath.cxx
   vtkDICOMVR.cxx
@@ -50,6 +52,7 @@ set(LIB_SRCS
   vtkDICOMSorter.cxx
   ${REFCOUNT_SRC}
   vtkDICOMUtilities.cxx
+  vtkDICOMUtilitiesUIDTable.cxx
   vtkDICOMValue.cxx
   vtkDICOMWriter.cxx
   vtkDICOMAlgorithm.cxx
@@ -59,27 +62,25 @@ set(LIB_SRCS
   vtkDICOMToRAS.cxx
   vtkDICOMCTRectifier.cxx
   vtkDICOMMetaDataAdapter.cxx
+  vtkDICOMUIDGenerator.cxx
   vtkNIFTIHeader.cxx
   vtkNIFTIReader.cxx
   vtkNIFTIWriter.cxx
   vtkScancoCTReader.cxx
 )
 
-# Sources that have no header files
-set(LIB_EXTRA_SRCS
-  vtkDICOMUtilitiesUIDTable.cxx
-)
-
 # Headers without a matching .cxx file are listed here
 set(LIB_HDRS
-  vtkDICOMModule.h
   ${REFCOUNT_HDR}
   vtkNIFTIPrivate.h
+  ${CMAKE_CURRENT_BINARY_DIR}/vtkDICOMBuild.h
   ${CMAKE_CURRENT_BINARY_DIR}/vtkDICOMConfig.h
+  ${CMAKE_CURRENT_BINARY_DIR}/vtkDICOMModule.h
 )
 
 # Internal headers (not installed)
-set(LIB_INTERNAL_HDRS
+set(LIB_PRIVATE_HDRS
+  vtkNIFTIPrivate.h
   ${CMAKE_CURRENT_BINARY_DIR}/vtkDICOMBuild.h
 )
 
@@ -91,25 +92,44 @@ set(LIB_ABSTRACT
 # Sources that are not vtkObjects
 set(LIB_SPECIAL
   vtkDICOMFile.cxx
+  vtkDICOMFileDirectory.cxx
+  vtkDICOMFilePath.cxx
   vtkDICOMTag.cxx
   vtkDICOMTagPath.cxx
   vtkDICOMVR.cxx
   vtkDICOMVM.cxx
   vtkDICOMCharacterSet.cxx
   vtkDICOMDictEntry.cxx
+  vtkDICOMDictHash.cxx
   vtkDICOMDictionary.cxx
+  vtkDICOMDictPrivate.cxx
   vtkDICOMDataElement.cxx
   vtkDICOMImageCodec.cxx
   ${REFCOUNT_SRC}
   vtkDICOMSequence.cxx
   vtkDICOMItem.cxx
-  vtkDICOMUtilities.cxx
   vtkDICOMValue.cxx
   vtkDICOMMetaDataAdapter.cxx
+  vtkDICOMUtilitiesUIDTable.cxx
 )
 
-set_source_files_properties(${LIB_SPECIAL} PROPERTIES WRAP_EXCLUDE ON)
-set_source_files_properties(${LIB_ABSTRACT} PROPERTIES ABSTRACT ON)
+set_source_files_properties(${LIB_HDRS} ${LIB_SPECIAL}
+  PROPERTIES WRAP_EXCLUDE ON)
+set_source_files_properties(${LIB_ABSTRACT}
+  PROPERTIES ABSTRACT ON)
+set_source_files_properties(${LIB_PRIVATE_HDRS}
+  PROPERTIES SKIP_HEADER_INSTALL ON)
+
+if(Module_vtkDICOM) # Building as a VTK remote module
+
+  vtk_module_library(vtkDICOM ${LIB_SRCS} ${LIB_HDRS})
+  target_link_libraries(${LIB_NAME}
+    LINK_PRIVATE ${GDCM_LIBS} ${DCMTK_LIBS})
+
+else() # else MODULE_vtkDICOM
+
+configure_file(${DICOM_CMAKE_DIR}/vtkDICOMModule.h.in
+  "${CMAKE_CURRENT_BINARY_DIR}/vtkDICOMModule.h" COPYONLY)
 
 # Automatically find the header for each cxx file
 foreach(arg ${LIB_SRCS})
@@ -122,18 +142,15 @@ endforeach()
 
 # Create the hierarchy file
 if("${VTK_MAJOR_VERSION}" GREATER 5)
-  if(BUILD_PYTHON_WRAPPERS OR BUILD_JAVA_WRAPPERS)
+  if(BUILD_PYTHON_WRAPPERS OR BUILD_TCL_WRAPPERS OR BUILD_JAVA_WRAPPERS)
     set_source_files_properties(${LIB_SPECIAL} PROPERTIES WRAP_SPECIAL ON)
     set(MODULE_HIERARCHY_NAME ${LIB_NAME}Hierarchy)
-    # The VTK 6 wrapping macros require vtk-module to be set
-    set(vtk-module ${LIB_NAME})
     # _LINK_DEPENDS is a variable suffix from the VTK 6 module macros
-    set(${vtk-module}_LINK_DEPENDS ${VTK_LIBS} ${KWSYS_LIBS} ${ZLIB_LIBS})
-    include(${DICOM_SOURCE_DIR}/CMake/vtkWrapHierarchy.cmake)
-    vtk_wrap_hierarchy(${MODULE_HIERARCHY_NAME} ${CMAKE_CURRENT_BINARY_DIR}
-      "${LIB_SRCS}")
+    set(${LIB_NAME}_LINK_DEPENDS ${VTK_LIBS} ${KWSYS_LIBS} ${ZLIB_LIBS})
+    include(vtkWrapHierarchy)
+    vtk_wrap_hierarchy(${LIB_NAME} ${CMAKE_CURRENT_BINARY_DIR} "${LIB_SRCS}")
     set(KIT_HIERARCHY_FILE ${CMAKE_CURRENT_BINARY_DIR}/${MODULE_HIERARCHY_NAME}.txt)
-    set(LIB_HIERARCHY_STAMP ${CMAKE_CURRENT_BINARY_DIR}/${MODULE_HIERARCHY_NAME}.stamp)
+    set(LIB_HIERARCHY_STAMP ${CMAKE_CURRENT_BINARY_DIR}/${MODULE_HIERARCHY_NAME}.stamp.txt)
   endif()
 endif()
 
@@ -144,14 +161,15 @@ if(DEFINED VTK_CUSTOM_LIBRARY_SUFFIX)
 endif()
 
 # Create the library
-add_library(${LIB_NAME} ${LIB_SRCS} ${LIB_EXTRA_SRCS} ${LIB_HIERARCHY_STAMP})
+add_library(${LIB_NAME} ${LIB_SRCS} ${LIB_HIERARCHY_STAMP})
 if("${VTK_MAJOR_VERSION}" GREATER 5)
   set_target_properties(${LIB_NAME} PROPERTIES
     OUTPUT_NAME ${LIB_NAME}${LIB_NAME_SUFFIX})
 endif()
 set_target_properties(${LIB_NAME} PROPERTIES
-  VERSION "${DICOM_VERSION}" SOVERSION "${DICOM_SHORT_VERSION}")
-if(BUILD_PYTHON_WRAPPERS OR BUILD_JAVA_WRAPPERS AND
+  VERSION "${PROJECT_VERSION}"
+  SOVERSION "${PROJECT_MAJOR_VERSION}.${PROJECT_MINOR_VERSION}")
+if(BUILD_PYTHON_WRAPPERS OR BUILD_TCL_WRAPPERS OR BUILD_JAVA_WRAPPERS AND
    NOT (CMAKE_VERSION VERSION_LESS 2.8))
   set_target_properties(${LIB_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
@@ -161,7 +179,6 @@ target_link_libraries(${LIB_NAME} LINK_PRIVATE
 
 # Wrappers
 if(BUILD_PYTHON_WRAPPERS)
-  set(vtk-module ${LIB_NAME})
   set(XY) # Get python version, e.g. 27 for python 2.7
   if(vtkPython_LIBRARIES)
     list(GET vtkPython_LIBRARIES 0 TMP_LIB_NAME)
@@ -191,7 +208,7 @@ if(BUILD_PYTHON_WRAPPERS)
   endif()
   # Tell vtkWrapPython to locate the python libraries for us.
   set(VTK_WRAP_PYTHON_FIND_LIBS ON)
-  include(${VTK_CMAKE_DIR}/vtkWrapPython.cmake)
+  include(vtkWrapPython)
   vtk_wrap_python3(${MODULE_PYTHON_NAME} LIB_PYTHON_SRCS "${LIB_SRCS}")
   add_library(${LIB_PYTHON_NAME} ${LIB_PYTHON_SRCS} ${LIB_PYTHON_EXTRA_SRCS})
   if(NOT (CMAKE_VERSION VERSION_LESS 2.8))
@@ -199,7 +216,8 @@ if(BUILD_PYTHON_WRAPPERS)
       POSITION_INDEPENDENT_CODE ON)
   endif()
   set_target_properties(${LIB_PYTHON_NAME} PROPERTIES
-    VERSION "${DICOM_VERSION}" SOVERSION "${DICOM_SHORT_VERSION}"
+    VERSION "${PROJECT_VERSION}"
+    SOVERSION "${PROJECT_MAJOR_VERSION}.${PROJECT_MINOR_VERSION}"
     OUTPUT_NAME "${LIB_PYTHON_OUTPUT_NAME}")
   target_link_libraries(${LIB_PYTHON_NAME} LINK_PUBLIC
     ${LIB_NAME} ${LIB_PYTHON_LIBS})
@@ -210,10 +228,6 @@ if(BUILD_PYTHON_WRAPPERS)
   else()
     target_link_libraries(${LIB_PYTHON_NAME} LINK_PRIVATE
       ${VTK_PYTHON_LIBRARIES})
-  endif()
-  if(USE_DCMTK AND DCMTK_charls_LIBRARY)
-    target_link_libraries(${LIB_PYTHON_NAME} LINK_PRIVATE
-      ${DCMTK_charls_LIBRARY})
   endif()
   if(KIT_PYTHON_DEPS)
     add_dependencies(${LIB_PYTHON_NAME} ${KIT_PYTHON_DEPS})
@@ -229,8 +243,41 @@ if(BUILD_PYTHON_WRAPPERS)
   target_link_libraries(${MODULE_PYTHON_NAME} ${LIB_PYTHON_NAME})
 endif()
 
+if(BUILD_TCL_WRAPPERS)
+  set(LIB_TCL_NAME ${LIB_NAME}TCL)
+  string(TOLOWER ${LIB_NAME} MODULE_TCL_NAME)
+  set(LIB_TCL_OUTPUT_NAME ${LIB_TCL_NAME})
+  if("${VTK_MAJOR_VERSION}" GREATER 5)
+    set(LIB_TCL_OUTPUT_NAME ${LIB_TCL_NAME}${LIB_NAME_SUFFIX})
+  endif()
+  set(LIB_TCL_LIBS)
+  foreach(TMP_LIB ${VTK_LIBS})
+    set(LIB_TCL_LIBS ${LIB_TCL_LIBS} ${TMP_LIB}TCL)
+  endforeach()
+  if(VTK_TCL_INCLUDE_DIR)
+    include_directories("${VTK_TCL_INCLUDE_DIR}")
+  endif()
+  include(vtkWrapTcl)
+  vtk_wrap_tcl3(${LIB_TCL_NAME} LIB_TCL_SRCS "${LIB_SRCS}" "")
+  add_library(${LIB_TCL_NAME} ${LIB_TCL_SRCS} ${LIB_TCL_EXTRA_SRCS}
+              ${LIB_HIERARCHY_STAMP})
+  target_link_libraries(${LIB_TCL_NAME} LINK_PUBLIC
+    ${LIB_NAME} ${LIB_TCL_LIBS})
+  if(KIT_TCL_DEPS)
+    add_dependencies(${LIB_TCL_NAME} ${KIT_TCL_DEPS})
+  endif()
+  set_target_properties(${LIB_TCL_NAME} PROPERTIES
+    OUTPUT_NAME ${LIB_TCL_OUTPUT_NAME})
+  # create the pkgIndex.tcl file
+  set(MODULE_TCL_PATH ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
+  configure_file(${DICOM_CMAKE_DIR}/pkgIndex.tcl.in
+    "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/pkgIndex.tcl" @ONLY)
+  set(MODULE_TCL_PATH ${DICOM_LIBRARY_INSTALL_DEST})
+  configure_file(${DICOM_CMAKE_DIR}/pkgIndex.tcl.in
+    "${CMAKE_CURRENT_BINARY_DIR}/pkgIndex.tcl" @ONLY)
+endif()
+
 if(BUILD_JAVA_WRAPPERS)
-  set(vtk-module ${LIB_NAME})
   set(VTK_WRAP_JAVA3_INIT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
   set(VTK_JAVA_HOME ${CMAKE_CURRENT_BINARY_DIR}/java/vtk)
   set(VTK_JAVA_MANIFEST ${CMAKE_CURRENT_BINARY_DIR}/java/manifest.txt)
@@ -247,7 +294,7 @@ if(BUILD_JAVA_WRAPPERS)
   else()
     include_directories("${JAVA_INCLUDE_PATH}" "${JAVA_INCLUDE_PATH2}")
   endif()
-  include(${VTK_CMAKE_DIR}/vtkWrapJava.cmake)
+  include(vtkWrapJava)
   vtk_wrap_java3(${LIB_JAVA_NAME} LIB_JAVA_SRCS "${LIB_SRCS}")
   add_library(${LIB_JAVA_NAME} SHARED ${LIB_JAVA_SRCS} ${LIB_JAVA_EXTRA_SRCS})
   if(APPLE)
@@ -257,9 +304,6 @@ if(BUILD_JAVA_WRAPPERS)
     set_target_properties(${LIB_JAVA_NAME} PROPERTIES NO_SONAME 1)
   endif()
   target_link_libraries(${LIB_JAVA_NAME} ${LIB_NAME} ${LIB_JAVA_LIBS})
-  if(USE_DCMTK AND DCMTK_charls_LIBRARY)
-    target_link_libraries(${LIB_JAVA_NAME} ${DCMTK_charls_LIBRARY})
-  endif()
   add_dependencies(${LIB_JAVA_NAME} ${LIB_NAME})
   if(KIT_JAVA_DEPS)
     add_dependencies(${LIB_JAVA_NAME} ${KIT_JAVA_DEPS})
@@ -303,11 +347,17 @@ endif()
 
 # Set the install rules for the library
 install(TARGETS
-  ${LIB_NAME} ${LIB_PYTHON_NAME} ${MODULE_PYTHON_NAME} ${LIB_JAVA_NAME}
+  ${LIB_NAME} ${LIB_PYTHON_NAME} ${MODULE_PYTHON_NAME}
+    ${LIB_TCL_NAME} ${LIB_JAVA_NAME}
   EXPORT DICOMTargets
   RUNTIME DESTINATION ${DICOM_RUNTIME_INSTALL_DEST} COMPONENT RuntimeLibraries
   LIBRARY DESTINATION ${DICOM_LIBRARY_INSTALL_DEST} COMPONENT RuntimeLibraries
   ARCHIVE DESTINATION ${DICOM_ARCHIVE_INSTALL_DEST} COMPONENT Development)
+
+if(BUILD_TCL_WRAPPERS)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pkgIndex.tcl
+    DESTINATION ${DICOM_TCL_INSTALL_DEST})
+endif()
 
 if(BUILD_JAVA_WRAPPERS)
   install(FILES ${VTK_JAR_PATH}/vtkdicom.jar
@@ -316,3 +366,5 @@ endif()
 
 install(FILES ${LIB_HDRS}
   DESTINATION ${DICOM_INCLUDE_INSTALL_DEST} COMPONENT Development)
+
+endif() # else MODULE_vtkDICOM

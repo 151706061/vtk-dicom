@@ -20,7 +20,7 @@
 #define vtkDICOMReader_h
 
 #include <vtkImageReader2.h>
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 class vtkIntArray;
 class vtkTypeInt64Array;
@@ -32,13 +32,14 @@ class vtkDICOMParser;
 class vtkDICOMSliceSorter;
 
 //----------------------------------------------------------------------------
-class VTK_DICOM_EXPORT vtkDICOMReader : public vtkImageReader2
+class VTKDICOM_EXPORT vtkDICOMReader : public vtkImageReader2
 {
 public:
+  vtkTypeMacro(vtkDICOMReader, vtkImageReader2);
+
   // Description:
   // Static method for construction.
   static vtkDICOMReader *New();
-  vtkTypeMacro(vtkDICOMReader, vtkImageReader2);
 
   // Description:
   // Print information about this object.
@@ -137,12 +138,22 @@ public:
   vtkGetMacro(DesiredTimeIndex, int);
 
   // Description:
+  // Turn off automatic conversion of YBR images to RGB.
+  // By default, YBR images are always converted to RGB (though the
+  // photometric interpretation in the metadata will remain the same).
+  vtkGetMacro(AutoYBRToRGB, int);
+  vtkSetMacro(AutoYBRToRGB, int);
+  vtkBooleanMacro(AutoYBRToRGB, int);
+
+  // Description:
   // Turn off automatic rescaling of intensity values.
-  // By default, of the reader sees different RescaleSlope and
-  // RescaleIntercept values for different slices, then it will
-  // adjust the pixel values so that they can all use the same
-  // slope and intercept.  This is a lossy process, so you might
-  // want to turn it off and use vtkDICOMApplyRescale instead.
+  // By default, if the RescaleSlope and RescaleIntercept values differ
+  // between slices (as occurs for all PET images and some CT images),
+  // then the reader will adjust the pixel values for the slices so
+  // that the same RescaleSlope and RescaleIntercept can be used for
+  // all slices.  This adjustment is a lossy process, so a preferable
+  // option is to call AutoRescaleOff() and use vtkDICOMApplyRescale
+  // to apply the pixel value rescaling instead.
   vtkGetMacro(AutoRescale, int);
   vtkSetMacro(AutoRescale, int);
   vtkBooleanMacro(AutoRescale, int);
@@ -229,6 +240,11 @@ protected:
     int fileIdx, int frameIdx, void *buffer, vtkIdType bufferSize);
 
   // Description:
+  // Convert buffer from YUV to RGB.
+  virtual void YBRToRGB(
+    int fileIdx, int frameIdx, void *buffer, vtkIdType bufferSize);
+
+  // Description:
   // Convert parser errors into reader errors.
   void RelayError(vtkObject *o, unsigned long e, void *data);
 
@@ -304,6 +320,11 @@ protected:
   // This indicates that the data must be rescaled.
   int NeedsRescale;
   int AutoRescale;
+
+  // Description:
+  // This indicates that the data must be converted to RGB.
+  int NeedsYBRToRGB;
+  int AutoYBRToRGB;
 
   // Description:
   // The number of packed pixel components in the input file.

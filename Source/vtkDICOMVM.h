@@ -15,10 +15,10 @@
 #define vtkDICOMVM_h
 
 #include <vtkSystemIncludes.h>
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 //! VMs (Value Multiplicities)
-class VTK_DICOM_EXPORT vtkDICOMVM
+class VTKDICOM_EXPORT vtkDICOMVM
 {
 public:
   enum EnumType
@@ -418,6 +418,7 @@ public:
     M99   = 0x6363,
     M99TN = 0x63FF,
     M100  = 0x6464,
+    M110  = 0x6E6E,
     M127  = 0x7F7F,
     M128  = 0x8080,
     M255  = 0x80FF,
@@ -431,12 +432,15 @@ public:
     M8192 = 0xA000
   };
 
+  //@{
   //! Construct an empty, invalid VM.
   vtkDICOMVM() : Key(0) {}
 
   //! Construct a VM from a VM enum constant.
   vtkDICOMVM(EnumType vm) : Key(static_cast<unsigned short>(vm)) {}
+  //@}
 
+  //@{
   //! Check validity of this VM.
   bool IsValid() const { return (this->Key != 0); }
 
@@ -454,18 +458,22 @@ public:
   int GetStep() const {
     if ((this->Key & 0x8000) != 0) { return 1; }
     else { return ((this->Key & 0x80) == 0 ? 1 : ((-this->Key) & 0xff)); } }
+  //@}
 
+  //@{
   bool operator==(vtkDICOMVM b) const { return (this->Key == b.Key); }
   bool operator!=(vtkDICOMVM b) const { return (this->Key != b.Key); }
   bool operator<=(vtkDICOMVM a) const { return (this->Key <= a.Key); }
   bool operator>=(vtkDICOMVM a) const { return (this->Key >= a.Key); }
   bool operator<(vtkDICOMVM a) const { return (this->Key < a.Key); }
   bool operator>(vtkDICOMVM a) const { return (this->Key > a.Key); }
+  //@}
 
 private:
   unsigned short Key;
 };
 
-VTK_DICOM_EXPORT ostream& operator<<(ostream& o, const vtkDICOMVM& a);
+VTKDICOM_EXPORT ostream& operator<<(ostream& o, const vtkDICOMVM& a);
 
 #endif /* vtkDICOMVM_h */
+// VTK-HeaderTest-Exclude: vtkDICOMVM.h

@@ -13,6 +13,7 @@
 =========================================================================*/
 
 #include "vtkDICOMFile.h"
+#include "vtkDICOMFilePath.h"
 
 #if defined(VTK_DICOM_POSIX_IO)
 #include <sys/types.h>
@@ -33,6 +34,8 @@
 #include <stdio.h>
 #include <errno.h>
 #endif
+
+#include <string.h>
 
 //----------------------------------------------------------------------------
 vtkDICOMFile::vtkDICOMFile(const char *filename, Mode mode)
@@ -60,11 +63,11 @@ vtkDICOMFile::vtkDICOMFile(const char *filename, Mode mode)
       }
     else if (errorCode == EISDIR)
       {
-      this->Error = IsDirectory;
+      this->Error = FileIsDirectory;
       }
     else if (errorCode == ENOTDIR)
       {
-      this->Error = DirectoryNotFound;
+      this->Error = (mode == Out ? ImpossiblePath : FileNotFound);
       }
     else if (errorCode == ENOENT)
       {
@@ -77,7 +80,7 @@ vtkDICOMFile::vtkDICOMFile(const char *filename, Mode mode)
       }
     else
       {
-      this->Error = Bad;
+      this->Error = UnknownError;
       }
     }
 #elif defined(VTK_DICOM_WIN32_IO)
@@ -85,15 +88,10 @@ vtkDICOMFile::vtkDICOMFile(const char *filename, Mode mode)
   this->Error = 0;
   this->Eof = false;
 
-  WCHAR *wideFilename = 0;
-  int n = MultiByteToWideChar(
-    CP_UTF8, MB_ERR_INVALID_CHARS, filename, -1, NULL, 0);
-  if (n > 0)
+  vtkDICOMFilePath fpath(filename);
+  const wchar_t *wideFilename = fpath.Wide();
+  if (wideFilename)
     {
-    wideFilename = new WCHAR[n];
-    n = MultiByteToWideChar(
-      CP_UTF8, MB_ERR_INVALID_CHARS, filename, -1, wideFilename, n);
-
     if (mode == In)
       {
       this->Handle = CreateFileW(wideFilename,
@@ -120,13 +118,13 @@ vtkDICOMFile::vtkDICOMFile(const char *filename, Mode mode)
         DWORD attr = GetFileAttributesW(wideFilename);
         if ((attr & FILE_ATTRIBUTE_DIRECTORY) != 0)
           {
-          this->Error = IsDirectory;
+          this->Error = FileIsDirectory;
           }
         }
       }
-    else if (errorCode == ERROR_DIRECTORY)
+    else if (errorCode == ERROR_PATH_NOT_FOUND)
       {
-      this->Error = DirectoryNotFound;
+      this->Error = (mode == Out ? ImpossiblePath : FileNotFound);
       }
     else if (errorCode == ERROR_FILE_NOT_FOUND)
       {
@@ -138,11 +136,10 @@ vtkDICOMFile::vtkDICOMFile(const char *filename, Mode mode)
       }
     else
       {
-      this->Error = Bad;
+      this->Error = UnknownError;
       }
     }
 
-  delete [] wideFilename;
 #else
   this->Handle = 0;
   this->Error = 0;
@@ -158,7 +155,7 @@ vtkDICOMFile::vtkDICOMFile(const char *filename, Mode mode)
     }
   if (this->Handle == 0)
     {
-    this->Error = Bad;
+    this->Error = UnknownError;
     }
 #endif
 }
@@ -181,7 +178,7 @@ void vtkDICOMFile::Close()
       }
     else if (errno != EINTR)
       {
-      this->Error = Bad;
+      this->Error = UnknownError;
       }
     this->Handle = 0;
     }
@@ -216,7 +213,7 @@ size_t vtkDICOMFile::Read(unsigned char *data, size_t len)
     }
   else if (n == -1)
     {
-    this->Error = Bad;
+    this->Error = UnknownError;
     n = 0;
     }
   return n;
@@ -230,7 +227,7 @@ size_t vtkDICOMFile::Read(unsigned char *data, size_t len)
     DWORD r = 0;
     if (ReadFile(this->Handle, &data[n], l, &r, NULL) == FALSE)
       {
-      this->Error = Bad;
+      this->Error = UnknownError;
       break;
       }
     else if (r == 0)
@@ -246,7 +243,8 @@ size_t vtkDICOMFile::Read(unsigned char *data, size_t len)
   if (n != len || len == 0)
     {
     this->Eof = (feof(static_cast<FILE *>(this->Handle)) != 0);
-    this->Error = (ferror(static_cast<FILE *>(this->Handle)) == 0 ? 0 : Bad);
+    this->Error = (ferror(static_cast<FILE *>(this->Handle)) == 0 ?
+                     0 : UnknownError);
     }
   return n;
 #endif
@@ -267,7 +265,7 @@ size_t vtkDICOMFile::Write(const unsigned char *data, size_t len)
     }
   if (n == -1)
     {
-    this->Error = Bad;
+    this->Error = UnknownError;
     n = 0;
     }
   return n;
@@ -288,7 +286,7 @@ size_t vtkDICOMFile::Write(const unsigned char *data, size_t len)
         }
       else
         {
-        this->Error = Bad;
+        this->Error = UnknownError;
         }
       break;
       }
@@ -299,7 +297,8 @@ size_t vtkDICOMFile::Write(const unsigned char *data, size_t len)
   size_t n = fwrite(data, 1, len, static_cast<FILE *>(this->Handle));
   if (n != len || len == 0)
     {
-    this->Error = (ferror(static_cast<FILE *>(this->Handle)) == 0 ? 0 : Bad);
+    this->Error = (ferror(static_cast<FILE *>(this->Handle)) == 0 ?
+                     0 : UnknownError);
     }
   return n;
 #endif
@@ -316,7 +315,7 @@ bool vtkDICOMFile::SetPosition(Size offset)
 #endif
   if (pos == -1)
     {
-    this->Error = Bad;
+    this->Error = UnknownError;
     return false;
     }
   return true;
@@ -326,7 +325,7 @@ bool vtkDICOMFile::SetPosition(Size offset)
   DWORD pos = SetFilePointer(this->Handle, lowerBits, &upperBits, FILE_BEGIN);
   if (pos == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR)
     {
-    this->Error = Bad;
+    this->Error = UnknownError;
     return false;
     }
   return true;
@@ -342,7 +341,7 @@ vtkDICOMFile::Size vtkDICOMFile::GetSize()
   struct stat fs;
   if (fstat(this->Handle, &fs) != 0)
     {
-    this->Error = Bad;
+    this->Error = UnknownError;
     return static_cast<long long>(-1);
     }
   return fs.st_size;
@@ -351,7 +350,7 @@ vtkDICOMFile::Size vtkDICOMFile::GetSize()
   DWORD lowerBits = GetFileSize(this->Handle, &upperBits);
   if (lowerBits == INVALID_FILE_SIZE && GetLastError() != NO_ERROR)
     {
-    this->Error = Bad;
+    this->Error = UnknownError;
     return static_cast<long long>(-1);
     }
   return lowerBits | (static_cast<Size>(upperBits) << 32);
@@ -367,31 +366,29 @@ vtkDICOMFile::Size vtkDICOMFile::GetSize()
       }
     if (fsetpos(fp, &pos) != 0)
       {
-      this->Error = Bad;
+      this->Error = UnknownError;
       }
     }
   if (size == -1)
     {
-    this->Error = Bad;
+    this->Error = UnknownError;
     }
   return size;
 #endif
 }
 
 //----------------------------------------------------------------------------
-int vtkDICOMFile::Remove(const char *filename)
+int vtkDICOMFile::Access(const char *filename, Mode mode)
 {
-#if defined(VTK_DICOM_WIN32_IO)
-  int errorCode = 0;
-  WCHAR *wideFilename = 0;
-  int n = MultiByteToWideChar(
-    CP_UTF8, MB_ERR_INVALID_CHARS, filename, -1, NULL, 0);
-  if (n > 0)
+#ifdef _WIN32
+  int errorCode = UnknownError;
+  vtkDICOMFilePath fpath(filename);
+  const wchar_t *wideFilename = fpath.Wide();
+  if (wideFilename)
     {
-    wideFilename = new WCHAR[n];
-    n = MultiByteToWideChar(
-      CP_UTF8, MB_ERR_INVALID_CHARS, filename, -1, wideFilename, n);
-    if (!DeleteFileW(wideFilename))
+    errorCode = 0;
+    DWORD code = GetFileAttributesW(wideFilename);
+    if (code == INVALID_FILE_ATTRIBUTES)
       {
       DWORD lastError = GetLastError();
       if (lastError == ERROR_ACCESS_DENIED ||
@@ -403,21 +400,30 @@ int vtkDICOMFile::Remove(const char *filename)
         {
         errorCode = FileNotFound;
         }
-      else if (lastError == ERROR_DIRECTORY)
+      else if (lastError == ERROR_PATH_NOT_FOUND)
         {
-        errorCode = DirectoryNotFound;
+        errorCode = (mode == Out ? ImpossiblePath : FileNotFound);
         }
       else
         {
-        errorCode = Bad;
+        errorCode = UnknownError;
         }
       }
-    delete [] wideFilename;
+    else if (mode == Out && (code & FILE_ATTRIBUTE_READONLY) != 0)
+      {
+      errorCode = AccessDenied;
+      }
+    else if ((code & FILE_ATTRIBUTE_DIRECTORY) != 0)
+      {
+      errorCode = FileIsDirectory;
+      }
     }
   return errorCode;
 #else
   int errorCode = 0;
-  if (unlink(filename) != 0)
+  struct stat fs;
+  if (stat(filename, &fs) != 0 ||
+      access(filename, (mode == In ? R_OK : W_OK)) != 0)
     {
     int e = errno;
     if (e == EACCES || e == EPERM)
@@ -430,13 +436,119 @@ int vtkDICOMFile::Remove(const char *filename)
       }
     else if (e == ENOTDIR)
       {
-      errorCode = DirectoryNotFound;
+      errorCode = (mode == Out ? ImpossiblePath : FileNotFound);
       }
     else
       {
-      errorCode = Bad;
+      errorCode = UnknownError;
+      }
+    }
+  else if (S_ISDIR(fs.st_mode))
+    {
+    errorCode = FileIsDirectory;
+    }
+  return errorCode;
+#endif
+}
+
+//----------------------------------------------------------------------------
+int vtkDICOMFile::Remove(const char *filename)
+{
+#if defined(VTK_DICOM_WIN32_IO)
+  int errorCode = 0;
+  vtkDICOMFilePath fpath(filename);
+  const wchar_t *wideFilename = fpath.Wide();
+  if (wideFilename)
+    {
+    if (!DeleteFileW(wideFilename))
+      {
+      DWORD lastError = GetLastError();
+      if (lastError == ERROR_ACCESS_DENIED ||
+          lastError == ERROR_SHARING_VIOLATION)
+        {
+        errorCode = AccessDenied;
+        }
+      else if (lastError == ERROR_FILE_NOT_FOUND ||
+               lastError == ERROR_PATH_NOT_FOUND)
+        {
+        errorCode = FileNotFound;
+        }
+      else
+        {
+        errorCode = UnknownError;
+        }
+      }
+    }
+  return errorCode;
+#else
+  int errorCode = 0;
+  if (unlink(filename) != 0)
+    {
+    int e = errno;
+    if (e == EACCES || e == EPERM)
+      {
+      errorCode = AccessDenied;
+      }
+    else if (e == ENOENT || e == ENOTDIR)
+      {
+      errorCode = FileNotFound;
+      }
+    else
+      {
+      errorCode = UnknownError;
       }
     }
   return errorCode;
 #endif
+}
+
+//----------------------------------------------------------------------------
+bool vtkDICOMFile::SameFile(const char *file1, const char *file2)
+{
+  // Two files are considered to be the same if:
+  // 1) they are on the same device
+  // 2) their index (inode number) is the same
+
+  bool result = false;
+#ifdef _WIN32
+  vtkDICOMFilePath fpath1(file1);
+  const wchar_t *widepath = fpath1.Wide();
+  HANDLE h1 = CreateFileW(widepath,
+    GENERIC_READ, FILE_SHARE_READ , NULL, OPEN_EXISTING,
+    FILE_FLAG_BACKUP_SEMANTICS, NULL);
+  vtkDICOMFilePath fpath2(file2);
+  widepath = fpath2.Wide();
+  HANDLE h2 = CreateFileW(widepath,
+    GENERIC_READ, FILE_SHARE_READ , NULL, OPEN_EXISTING,
+    FILE_FLAG_BACKUP_SEMANTICS, NULL);
+  if (h1 != INVALID_HANDLE_VALUE && h2 != INVALID_HANDLE_VALUE)
+    {
+    BY_HANDLE_FILE_INFORMATION buf;
+    GetFileInformationByHandle(h1, &buf);
+    DWORD sn = buf.dwVolumeSerialNumber;
+    DWORD hi = buf.nFileIndexHigh;
+    DWORD li = buf.nFileIndexLow;
+    GetFileInformationByHandle(h2, &buf);
+    result = (buf.dwVolumeSerialNumber == sn);
+    result &= (buf.nFileIndexHigh == hi);
+    result &= (buf.nFileIndexLow == li);
+    }
+  if (h1 != INVALID_HANDLE_VALUE)
+    {
+    CloseHandle(h1);
+    }
+  if (h2 != INVALID_HANDLE_VALUE)
+    {
+    CloseHandle(h2);
+    }
+#else
+  struct stat st1;
+  struct stat st2;
+  if (stat(file1, &st1) == 0 && stat(file2, &st2) == 0)
+    {
+    result = (memcmp(&st1.st_dev, &st2.st_dev, sizeof(st1.st_dev)) == 0);
+    result &= (memcmp(&st1.st_ino, &st2.st_ino, sizeof(st1.st_ino)) == 0);
+    }
+#endif
+  return result;
 }

@@ -15,7 +15,7 @@
 #define vtkDICOMCompiler_h
 
 #include <vtkObject.h>
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 
 class vtkStringArray;
@@ -28,7 +28,7 @@ class vtkDICOMCompilerInternalFriendship;
  *  This class provides routines for compiling a vtkDICOMMetaData
  *  object into a DICOM file.
  */
-class VTK_DICOM_EXPORT vtkDICOMCompiler : public vtkObject
+class VTKDICOM_EXPORT vtkDICOMCompiler : public vtkObject
 {
 public:
   //! Create a new vtkDICOMCompiler instance.
@@ -40,10 +40,13 @@ public:
   //! Print a summary of the contents of this object.
   void PrintSelf(ostream& os, vtkIndent indent);
 
+  //@{
   //! Set the file name.
   vtkSetStringMacro(FileName);
   vtkGetStringMacro(FileName);
+  //@}
 
+  //@{
   //! Set the SOP Instance UID.
   /*!
    *  If you do not supply a UID, a random UID will be generated.
@@ -51,7 +54,9 @@ public:
    */
   vtkSetStringMacro(SOPInstanceUID);
   vtkGetStringMacro(SOPInstanceUID);
+  //@}
 
+  //@{
   //! Set the Series Instance UID.
   /*!
    *  If you do not supply a UID, a random UID will be generated.
@@ -59,7 +64,9 @@ public:
    */
   vtkSetStringMacro(SeriesInstanceUID);
   vtkGetStringMacro(SeriesInstanceUID);
+  //@}
 
+  //@{
   //! Set the Study Instance UID.
   /*!
    *  If you do not supply a UID, a random UID will be generated.
@@ -67,21 +74,27 @@ public:
    */
   vtkSetStringMacro(StudyInstanceUID);
   vtkGetStringMacro(StudyInstanceUID);
+  //@}
 
+  //@{
   //! Set the Implementation Class UID.
   /*!
    *  If you do not supply a UID, a default one will be used.
    */
   vtkSetStringMacro(ImplementationClassUID);
   vtkGetStringMacro(ImplementationClassUID);
+  //@}
 
+  //@{
   //! Set the Implementation Version Name.
   /*!
    *  If you do not supply a name, a default one will be used.
    */
   vtkSetStringMacro(ImplementationVersionName);
   vtkGetStringMacro(ImplementationVersionName);
+  //@}
 
+  //@{
   //! Set the Source Application Entity Title.
   /*!
    *  Provide a short name (16 chars max) for the network node that
@@ -90,7 +103,9 @@ public:
    */
   vtkSetStringMacro(SourceApplicationEntityTitle);
   vtkGetStringMacro(SourceApplicationEntityTitle);
+  //@}
 
+  //@{
   //! Set the Transfer Syntax UID.
   /*!
    *  The transfer syntax should be left at its default value of
@@ -101,15 +116,21 @@ public:
    */
   vtkSetStringMacro(TransferSyntaxUID);
   vtkGetStringMacro(TransferSyntaxUID);
+  //@}
 
+  //@{
   //! Set the metadata object to write to the file.
   void SetMetaData(vtkDICOMMetaData *);
   vtkDICOMMetaData *GetMetaData() { return this->MetaData; }
+  //@}
 
+  //@{
   //! Set the instance index to use when accessing vtkDICOMMataData.
   vtkSetMacro(Index, int);
   int GetIndex() { return this->Index; }
+  //@}
 
+  //@{
   //! Set the buffer size, the default is 8192 (8k).
   /*!
    *  A larger buffer size results in fewer IO calls.  The
@@ -117,7 +138,9 @@ public:
    */
   void SetBufferSize(int size);
   int GetBufferSize() { return this->BufferSize; }
+  //@}
 
+  //@{
   //! Write the metadata to the file.
   virtual void WriteHeader();
 
@@ -144,16 +167,20 @@ public:
 
   //! Get the IO error code.
   unsigned long GetErrorCode() { return this->ErrorCode; }
+  //@}
 
+  //@{
   //! Generate a series UID and instance UIDs for the meta data.
   /*!
    *  This will be called automatically whenever you provide a
    *  new meta data object for the compiler.  Note that new UIDs
    *  will not be generated if you have already provided them with
-   *  SetSOPInstanceUID() and SetSeriesUID().
+   *  SetSOPInstanceUID() and SetSeriesInstanceUID().
    */
   void GenerateSeriesUIDs();
+  //@}
 
+  //@{
   //! Use the original PixelData VR when writing pixel data element.
   /*!
    *  This is really only useful when cloning data sets.  It ensures
@@ -162,6 +189,7 @@ public:
   vtkSetMacro(KeepOriginalPixelDataVR, bool);
   vtkBooleanMacro(KeepOriginalPixelDataVR, bool);
   vtkGetMacro(KeepOriginalPixelDataVR, bool);
+  //@}
 
 protected:
   vtkDICOMCompiler();
@@ -170,10 +198,14 @@ protected:
   //! Internal method for flushing the IO buffer.
   /*!
    *  This is an internal method that flushes the buffer to the file.
-   *  The pointer cp markes the current position in the buffer, and
-   *  ep marks the end of the buffer.  By checking ep-cp, subroutines
-   *  can check how much space is left in the buffer and call FlushBuffer
-   *  only when the buffer is nearly full.
+   *  If called with cp = 0, it will initialize cp to the beginning of
+   *  the write buffer, and ep to the end of the buffer, without writing
+   *  anything to the file.  The caller should then write to the buffer,
+   *  incrementing the pointer cp while doing so.  When cp approaches the
+   *  end of the buffer (which is stored in ep), FlushBuffer should be
+   *  called to flush the buffer contents to the file.  Every call will
+   *  reset cp to the beginning of the buffer and ep to the end of the
+   *  buffer.
    */
   virtual bool FlushBuffer(unsigned char* &cp, unsigned char* &ep);
 

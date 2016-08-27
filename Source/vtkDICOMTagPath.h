@@ -15,7 +15,7 @@
 #define vtkDICOMTagPath_h
 
 #include <vtkSystemIncludes.h>
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 #include "vtkDICOMTag.h"
 
 //! A tag path for digging values out of sequence items.
@@ -24,9 +24,10 @@
  *  buried within sequences.  In the interest of creating a simple
  *  and efficient implementation, it can go at most two levels deep.
  */
-class VTK_DICOM_EXPORT vtkDICOMTagPath
+class VTKDICOM_EXPORT vtkDICOMTagPath
 {
 public:
+  //@{
   //! Construct a tag path with an empty head and tail.
   vtkDICOMTagPath() : Head(), Index(0), Tail(), Index2(0), Tail2() {}
 
@@ -42,7 +43,9 @@ public:
   //! Construct a tag path from just a single tag.
   explicit vtkDICOMTagPath(vtkDICOMTag tag) :
     Head(tag), Index(0), Tail(), Index2(0), Tail2() {}
+  //@}
 
+  //@{
   //! If there is no tail, then Head is the end of the path.
   bool HasTail() const {
     return (this->Tail > vtkDICOMTag()); }
@@ -58,6 +61,16 @@ public:
   //! Get the remainder of the path.
   vtkDICOMTagPath GetTail() const {
     return vtkDICOMTagPath(this->Tail, this->Index2, this->Tail2); }
+  //@}
+
+  //@{
+  bool operator==(const vtkDICOMTagPath& b) const;
+  bool operator!=(const vtkDICOMTagPath& b) const;
+  bool operator<=(const vtkDICOMTagPath& b) const;
+  bool operator>=(const vtkDICOMTagPath& b) const;
+  bool operator<(const vtkDICOMTagPath& b) const;
+  bool operator>(const vtkDICOMTagPath& b) const;
+  //@}
 
 private:
   vtkDICOMTag Head;
@@ -67,6 +80,7 @@ private:
   vtkDICOMTag Tail2;
 };
 
-VTK_DICOM_EXPORT ostream& operator<<(ostream& o, const vtkDICOMTagPath& a);
+VTKDICOM_EXPORT ostream& operator<<(ostream& o, const vtkDICOMTagPath& a);
 
 #endif /* vtkDICOMTagPath_h */
+// VTK-HeaderTest-Exclude: vtkDICOMTagPath.h

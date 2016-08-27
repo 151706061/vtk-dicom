@@ -27,12 +27,12 @@
 #define vtkDICOMToRAS_h
 
 #include <vtkThreadedImageAlgorithm.h>
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 
 class vtkMatrix4x4;
 
 //----------------------------------------------------------------------------
-class VTK_DICOM_EXPORT vtkDICOMToRAS : public vtkThreadedImageAlgorithm
+class VTKDICOM_EXPORT vtkDICOMToRAS : public vtkThreadedImageAlgorithm
 {
 public:
   // Description:

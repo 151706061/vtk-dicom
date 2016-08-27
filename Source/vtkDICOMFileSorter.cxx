@@ -12,9 +12,13 @@
 
 =========================================================================*/
 #include "vtkDICOMFileSorter.h"
+#include "vtkDICOMFile.h"
+#include "vtkDICOMFileDirectory.h"
+#include "vtkDICOMFilePath.h"
 #include "vtkDICOMMetaData.h"
 #include "vtkDICOMParser.h"
 #include "vtkDICOMUtilities.h"
+#include "vtkDICOMCharacterSet.h"
 
 #include <vtkObjectFactory.h>
 #include <vtkSmartPointer.h>
@@ -28,10 +32,15 @@
 #include <vector>
 #include <list>
 #include <algorithm>
-#include <vtksys/SystemTools.hxx>
-#include <vtksys/Glob.hxx>
 
 #include <ctype.h>
+
+// For compatibility with new VTK generic data arrays
+#ifdef vtkGenericDataArray_h
+#define SetTupleValue SetTypedTuple
+#define GetTupleValue GetTypedTuple
+#define InsertNextTupleValue InsertNextTypedTuple
+#endif
 
 vtkStandardNewMacro(vtkDICOMFileSorter);
 
@@ -51,7 +60,8 @@ struct vtkDICOMFileSorter::FileInfo
   std::string FileName;
   vtkDICOMValue StudyUID;
   vtkDICOMValue SeriesUID;
-  int InstanceNumber;
+  vtkDICOMValue InstanceUID;
+  unsigned int InstanceNumber;
 };
 
 bool vtkDICOMFileSorter::CompareInstance(
@@ -226,6 +236,7 @@ void vtkDICOMFileSorter::SortFiles(vtkStringArray *input)
   parser->AddObserver(
     vtkCommand::ErrorEvent, this, &vtkDICOMFileSorter::RelayError);
 
+  groups->InsertNextValue(0x0008);
   groups->InsertNextValue(0x0020);
   parser->SetMetaData(meta);
   parser->SetGroups(groups);
@@ -239,9 +250,29 @@ void vtkDICOMFileSorter::SortFiles(vtkStringArray *input)
     const std::string& fileName = input->GetValue(j);
     this->SetInternalFileName(fileName.c_str());
 
-    // Skip anything that is a directory
-    if (vtksys::SystemTools::FileIsDirectory(fileName.c_str()))
+    int code = vtkDICOMFile::Access(fileName.c_str(), vtkDICOMFile::In);
+    if (code == vtkDICOMFile::FileIsDirectory)
       {
+      // Skip anything that is a directory
+      continue;
+      }
+    else if (code != 0)
+      {
+      const char *errText = "Can't open the file ";
+      this->SetErrorCode(vtkErrorCode::CannotOpenFileError);
+      if (code == vtkDICOMFile::AccessDenied)
+        {
+        errText = "No permission to read the file ";
+        }
+      else if (code == vtkDICOMFile::FileNotFound)
+        {
+        errText = "File not found ";
+        }
+      else if (code == vtkDICOMFile::ImpossiblePath)
+        {
+        errText = "Bad file path ";
+        }
+      vtkErrorMacro("SortFiles: " << errText << this->InternalFileName);
       continue;
       }
 
@@ -267,6 +298,7 @@ void vtkDICOMFileSorter::SortFiles(vtkStringArray *input)
     fileInfo.FileName = fileName;
     fileInfo.StudyUID = meta->GetAttributeValue(DC::StudyInstanceUID);
     fileInfo.SeriesUID = meta->GetAttributeValue(DC::SeriesInstanceUID);
+    fileInfo.InstanceUID = meta->GetAttributeValue(DC::SOPInstanceUID);
     fileInfo.InstanceNumber =
       meta->GetAttributeValue(DC::InstanceNumber).AsUnsignedInt();
 
@@ -321,15 +353,50 @@ void vtkDICOMFileSorter::SortFiles(vtkStringArray *input)
       studyCount++;
       }
 
-    vtkSmartPointer<vtkStringArray> sa =
-      vtkSmartPointer<vtkStringArray>::New();
+    // Check for duplicate instances, put them into a new series
     vtkIdType n = static_cast<vtkIdType>(v.size());
-    sa->SetNumberOfValues(n);
+    std::vector<vtkIdType> duplicate(n);
+    std::vector<vtkIdType> seriesLength;
+    seriesLength.push_back(0);
+    vtkIdType numberOfDuplicates = 0;
     for (vtkIdType i = 0; i < n; i++)
       {
-      sa->SetValue(i, v[i].FileName);
+      const vtkDICOMValue& uid = v[i].InstanceUID;
+      vtkIdType count = 0;
+      if (uid.GetVL() > 0)
+        {
+        for (vtkIdType j = 0; j < i; j++)
+          {
+          if (v[j].InstanceUID == uid)
+            {
+            count++;
+            }
+          }
+        }
+      duplicate[i] = count;
+      if (count > numberOfDuplicates)
+        {
+        numberOfDuplicates = count;
+        seriesLength.push_back(0);
+        }
+      seriesLength[count]++;
       }
-    this->AddSeriesFileNames(studyCount - 1, sa);
+
+    for (vtkIdType k = 0; k <= numberOfDuplicates; k++)
+      {
+      vtkSmartPointer<vtkStringArray> sa =
+        vtkSmartPointer<vtkStringArray>::New();
+      sa->SetNumberOfValues(seriesLength[k]);
+      vtkIdType j = 0;
+      for (vtkIdType i = 0; i < n; i++)
+        {
+        if (duplicate[i] == k)
+          {
+          sa->SetValue(j++, v[i].FileName);
+          }
+        }
+      this->AddSeriesFileNames(studyCount - 1, sa);
+      }
     }
 }
 
@@ -345,16 +412,35 @@ void vtkDICOMFileSorter::Execute()
 
   if (this->InputFileName) // The input was a single file
     {
-    if (!vtksys::SystemTools::FileExists(this->InputFileName))
+    int code = vtkDICOMFile::Access(this->InputFileName, vtkDICOMFile::In);
+    if (code == vtkDICOMFile::FileNotFound)
       {
       this->ErrorCode = vtkErrorCode::FileNotFoundError;
-      vtkErrorMacro("File not found: " << this->InputFileName);
+      vtkErrorMacro("File or directory not found: " << this->InputFileName);
       return;
       }
-    else if (vtksys::SystemTools::FileIsDirectory(this->InputFileName))
+    else if (code == vtkDICOMFile::FileIsDirectory)
       {
       this->ErrorCode = vtkErrorCode::CannotOpenFileError;
       vtkErrorMacro("Named file is a directory: " << this->InputFileName);
+      return;
+      }
+    else if (code == vtkDICOMFile::AccessDenied)
+      {
+      this->ErrorCode = vtkErrorCode::CannotOpenFileError;
+      vtkErrorMacro("Permission denied: " << this->InputFileName);
+      return;
+      }
+    else if (code == vtkDICOMFile::ImpossiblePath)
+      {
+      this->ErrorCode = vtkErrorCode::CannotOpenFileError;
+      vtkErrorMacro("Bad file path: " << this->InputFileName);
+      return;
+      }
+    else if (code != 0)
+      {
+      this->ErrorCode = vtkErrorCode::UnknownError;
+      vtkErrorMacro("Unknown file error: " << this->InputFileName);
       return;
       }
 
@@ -383,49 +469,70 @@ void vtkDICOMFileSorter::Execute()
       }
 
     // Find the path to the file
-    std::vector<std::string> path;
-    vtksys::SystemTools::SplitPath(this->InputFileName, path);
+    vtkDICOMFilePath path(this->InputFileName);
 
-    // Replace file with a glob pattern
-    std::string ext =
-      vtksys::SystemTools::GetFilenameLastExtension(path.back());
-    path.back() = "*";
+    // Create a glob pattern
+    std::string base = path.GetBack(); 
+    std::string ext = path.GetExtension();
+    std::string pattern = "*";
     if (ext == ".dc" || ext == ".dcm" || ext == ".DC" || ext == ".DCM")
       {
-      path.back() += ext;
+      pattern += ext;
       }
-    std::string pattern = vtksys::SystemTools::JoinPath(path);
+    path.PopBack();
+    path.PushBack(pattern);
+    std::string dirname = path.AsString();
 
     // Find all the files that match the pattern
-    vtksys::Glob glob;
-    glob.RecurseOff();
-    glob.FindFiles(pattern);
-    std::vector<std::string> files = glob.GetFiles();
+    vtkDICOMFileDirectory d(dirname.c_str());
 
     // Create a vtkStringArray from the matching files
     vtkSmartPointer<vtkStringArray> array =
       vtkSmartPointer<vtkStringArray>::New();
-    for (size_t i = 0; i < files.size(); i++)
+    if (d.GetError() == 0)
       {
-      array->InsertNextValue(files[i]);
+      int n = d.GetNumberOfFiles();
+      for (int i = 0; i < n; i++)
+        {
+        const char *filename = d.GetFile(i);
+        if (vtkDICOMUtilities::PatternMatches(pattern.c_str(), filename) &&
+            !d.IsDirectory(i))
+          {
+          array->InsertNextValue(filename);
+          }
+        }
       }
 
     // Sort the files
     this->SortFiles(array);
 
-    // Set FileNames to contain the matched series
+    // Find the series that the original file belonged to.  Do the search
+    // twice, once with case-sensitivity and once without
     bool done = false;
-    for (size_t j = 0; j < this->Series->size() && !done; j++)
+    for (int caseless = 0; !done && caseless < 2; caseless++)
       {
-      vtkStringArray *sa = (*this->Series)[j];
-      for (vtkIdType k = 0; k < sa->GetNumberOfValues(); k++)
+      if (caseless)
         {
-        if (vtksys::SystemTools::ComparePath(
-              sa->GetValue(k).c_str(), this->InputFileName))
+        vtkDICOMCharacterSet cs(vtkDICOMCharacterSet::ISO_IR_192);
+        base = cs.CaseFoldedUTF8(base.data(), base.length());
+        }
+      for (size_t j = 0; j < this->Series->size() && !done; j++)
+        {
+        vtkStringArray *sa = (*this->Series)[j];
+        for (vtkIdType k = 0; k < sa->GetNumberOfValues(); k++)
           {
-          this->OutputFileNames->DeepCopy(sa);
-          done = true;
-          break;
+          std::string tmp = vtkDICOMFilePath(sa->GetValue(k)).GetBack();
+          if (caseless)
+            {
+            vtkDICOMCharacterSet cs(vtkDICOMCharacterSet::ISO_IR_192);
+            tmp = cs.CaseFoldedUTF8(tmp.data(), tmp.length());
+            }
+          if (tmp == base)
+            {
+            this->OutputFileNames->DeepCopy(sa);
+            done = true;
+            break;
+            }
           }
         }
       }

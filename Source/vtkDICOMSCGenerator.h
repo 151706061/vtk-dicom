@@ -14,7 +14,7 @@
 #ifndef vtkDICOMSCGenerator_h
 #define vtkDICOMSCGenerator_h
 
-#include "vtkDICOMModule.h"
+#include "vtkDICOMModule.h" // For export macro
 #include "vtkDICOMGenerator.h"
 
 //! Generate DICOM data objects for Secondary Capture images.
@@ -29,7 +29,7 @@
  *  - Multi-frame Grayscale Word SC, 1.2.840.10008.5.1.4.1.1.7.3
  *  - Multi-frame True Color SC, 1.2.840.10008.5.1.4.1.1.7.4
  */
-class VTK_DICOM_EXPORT vtkDICOMSCGenerator : public vtkDICOMGenerator
+class VTKDICOM_EXPORT vtkDICOMSCGenerator : public vtkDICOMGenerator
 {
 public:
   //! Static method for construction.

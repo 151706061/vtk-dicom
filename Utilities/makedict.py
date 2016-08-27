@@ -36,7 +36,7 @@ for arg in sys.argv[1:]:
     sys.exit(1)
 
 # the hash table, in PYTHON
-htsize = 1024
+htsize = 4096
 
 # collect private dictionaries
 privatelines = {}
@@ -109,9 +109,9 @@ def makedict(lines, creator="DICOM"):
   # a set to keep track of all VM strings encountered
   vms = {}
 
-  htsize = 1024
+  htsize = 4096
   if privatedict:
-    htsize = int(len(lines)/24)
+    htsize = int(len(lines)/6)
     if htsize == 0:
       htsize = 1
 
@@ -303,13 +303,13 @@ def printbody(entry_dict, classname):
       ds = "%03d" % (dn,)
       print "// ----- %s -----" % (name,)
       print
-    print "DictEntry Dict%sContents[] = {" % (ds,)
+    print "const DictEntry Dict%sContents[] = {" % (ds,)
     for l in entry_list:
       print l
     print "};"
     for table,tagorkey in [(tag_table,"Tag"),(key_table,"Key")]:
       print
-      print "unsigned short Dict%s%sHashTable[] = {" % (ds,tagorkey)
+      print "const unsigned short Dict%s%sHashTable[] = {" % (ds,tagorkey)
       i = 0
       j = len(table) + 1
       for l in table:
@@ -373,7 +373,7 @@ def printbody(entry_dict, classname):
     print
     print "} // end anonymous namespace"
     print
-    print "static int %sInitializerCounter;" % (classname,)
+    print "static unsigned int %sInitializerCounter;" % (classname,)
     print
     print "%sInitializer::%sInitializer()" % (classname,classname)
     print "{"
@@ -418,6 +418,7 @@ else:
 
   if printheader:
     printhead({"DICOM" : enum_list}, classname)
+    print "// VTK-HeaderTest-Exclude: %s.h" % (classname,)
   else:
     printbody({"DICOM" : (entry_list, tag_table, key_table)}, classname)
 
