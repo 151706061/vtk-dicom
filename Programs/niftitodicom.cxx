@@ -13,7 +13,6 @@
 =========================================================================*/
 
 #include "vtkDICOMConfig.h"
-#include "vtkDICOMBuild.h"
 #include "vtkDICOMMetaData.h"
 #include "vtkDICOMParser.h"
 #include "vtkDICOMReader.h"
@@ -74,31 +73,25 @@ struct niftitodicom_options
   bool silent;
   bool verbose;
   bool verbatim;
+  bool version;
+  bool help;
+  bool invalid;
   const char *output;
   const char *input;
 };
 
 
 // Print the version
-void niftitodicom_version(FILE *file, const char *command_name, bool verbose)
+void niftitodicom_version(FILE *file, const char *command_name)
 {
   const char *cp = command_name + strlen(command_name);
   while (cp != command_name && cp[-1] != '\\' && cp[-1] != '/') { --cp; }
 
-  if (!verbose)
-  {
-    fprintf(file, "%s %s\n", cp, DICOM_VERSION);
-    fprintf(file, "\n"
-      "Copyright (c) 2012-2022, David Gobbi.\n\n"
-      "This software is distributed under an open-source license.  See the\n"
-      "Copyright.txt file that comes with the vtk-dicom source distribution.\n");
-  }
-  else
-  {
-    fprintf(file,
-      "Head %8.8s, Built %s, %s\n",
-      DICOM_SOURCE_VERSION, DICOM_BUILD_DATE, DICOM_BUILD_TIME);
-  }
+  fprintf(file, "%s %s\n", cp, DICOM_VERSION);
+  fprintf(file, "\n"
+    "Copyright (c) 2012-2022, David Gobbi.\n\n"
+    "This software is distributed under an open-source license.  See the\n"
+    "Copyright.txt file that comes with the vtk-dicom source distribution.\n");
 }
 
 
@@ -126,7 +119,6 @@ void niftitodicom_usage(FILE *file, const char *command_name)
     "  --modality              The modality: MR or CT or SC.\n"
     "  --uid-prefix            A DICOM uid prefix (optional).\n"
     "  --version               Print the version and exit.\n"
-    "  --build-version         Print source and build version.\n"
     "  --help                  Documentation for niftitodicom.\n"
   );
 }
@@ -165,7 +157,7 @@ void niftitodicom_help(FILE *file, const char *command_name)
 }
 
 // Print error
-void niftitodicom_check_error(vtkObject *o)
+bool niftitodicom_check_error(vtkObject *o)
 {
   vtkNIFTIReader *reader = vtkNIFTIReader::SafeDownCast(o);
   vtkDICOMFileSorter *sorter = vtkDICOMFileSorter::SafeDownCast(o);
@@ -201,7 +193,7 @@ void niftitodicom_check_error(vtkObject *o)
   switch(errorcode)
   {
     case vtkErrorCode::NoError:
-      return;
+      return false;
     case vtkErrorCode::FileNotFoundError:
       fprintf(stderr, "File not found: %s\n", filename);
       break;
@@ -228,7 +220,7 @@ void niftitodicom_check_error(vtkObject *o)
       break;
   }
 
-  exit(1);
+  return true;
 }
 
 // Check that a file has a NIFTI name
@@ -265,6 +257,9 @@ void niftitodicom_read_options(
   options->silent = false;
   options->verbose = false;
   options->verbatim = false;
+  options->version = false;
+  options->help = false;
+  options->invalid = false;
   options->output = nullptr;
   options->input = nullptr;
 
@@ -288,8 +283,9 @@ void niftitodicom_read_options(
         if (argi >= argc ||
             argv[argi][0] == '-')
         {
-          fprintf(stderr, "\nA value must follow the \'%s\' flag\n\n", arg);
-          exit(1);
+          fprintf(stderr, "A value must follow the \'%s\' flag\n\n", arg);
+          options->invalid = true;
+          return;
         }
         if (strcmp(arg, "--modality") == 0)
         {
@@ -339,24 +335,20 @@ void niftitodicom_read_options(
       }
       else if (strcmp(arg, "--version") == 0)
       {
-        niftitodicom_version(stdout, argv[0], false);
-        exit(0);
-      }
-      else if (strcmp(arg, "--build-version") == 0)
-      {
-        niftitodicom_version(stdout, argv[0], true);
-        exit(0);
+        options->version = true;
+        return;
       }
       else if (strcmp(arg, "--help") == 0)
       {
-        niftitodicom_help(stdout, argv[0]);
-        exit(0);
+        options->help = true;
+        return;
       }
       else if (arg[0] == '-' && arg[1] == '-')
       {
-        fprintf(stderr, "\nUnrecognized option %s\n\n", arg);
+        fprintf(stderr, "Unrecognized option %s\n\n", arg);
         niftitodicom_usage(stderr, argv[0]);
-        exit(1);
+        options->invalid = true;
+        return;
       }
       else if (arg[0] == '-' && arg[1] != '-')
       {
@@ -380,9 +372,10 @@ void niftitodicom_read_options(
             {
               if (argi >= argc)
               {
-                fprintf(stderr, "\nA file must follow the \'-o\' flag\n\n");
+                fprintf(stderr, "A file must follow the \'-o\' flag\n\n");
                 niftitodicom_usage(stderr, argv[0]);
-                exit(1);
+                options->invalid = true;
+                return;
               }
               arg = argv[argi++];
             }
@@ -391,9 +384,10 @@ void niftitodicom_read_options(
           }
           else
           {
-            fprintf(stderr, "\nUnrecognized \'%c\' in option %s\n\n", arg[argj], arg);
+            fprintf(stderr, "Unrecognized \'%c\' in option %s\n\n", arg[argj], arg);
             niftitodicom_usage(stderr, argv[0]);
-            exit(1);
+            options->invalid = true;
+            return;
           }
         }
       }
@@ -414,9 +408,10 @@ void niftitodicom_read_options(
           }
           else
           {
-            fprintf(stderr, "\nAt most one NIFTI file can be specified.\n");
+            fprintf(stderr, "At most one NIFTI file can be specified.\n");
             niftitodicom_usage(stderr, argv[0]);
-            exit(1);
+            options->invalid = true;
+            return;
           }
         }
       }
@@ -439,9 +434,10 @@ void niftitodicom_read_options(
         }
         else
         {
-          fprintf(stderr, "\nAt most one NIFTI file can be specified.\n");
+          fprintf(stderr, "At most one NIFTI file can be specified.\n");
           niftitodicom_usage(stderr, argv[0]);
-          exit(1);
+          options->invalid = true;
+          return;
         }
       }
     }
@@ -449,7 +445,7 @@ void niftitodicom_read_options(
 }
 
 // Convert one NIFTI file into a DICOM series
-void niftitodicom_convert_one(
+bool niftitodicom_convert_one(
   const niftitodicom_options *options,
   const char *filename,
   vtkStringArray *a,
@@ -845,11 +841,16 @@ void niftitodicom_convert_one(
   writer->SetInputConnection(lastOutput);
   writer->SetMemoryRowOrderToFileNative();
   writer->Write();
-  niftitodicom_check_error(writer);
+  if (niftitodicom_check_error(writer))
+  {
+    return false;
+  }
+
+  return true;
 }
 
 // Process a list of files
-void niftitodicom_convert_files(
+bool niftitodicom_convert_files(
   niftitodicom_options *options, vtkStringArray *files,
   const char *outpath)
 {
@@ -868,9 +869,12 @@ void niftitodicom_convert_files(
     vtkSmartPointer<vtkDICOMFileSorter>::New();
   sorter->SetInputFileNames(presorter->GetFileNames());
   sorter->Update();
-  niftitodicom_check_error(sorter);
+  if (niftitodicom_check_error(sorter))
+  {
+    return false;
+  }
 
-  niftitodicom_convert_one(
+  return niftitodicom_convert_one(
     options, filename, sorter->GetOutputFileNames(), outpath);
 }
 
@@ -886,6 +890,20 @@ int MAINMACRO(int argc, char *argv[])
 
   niftitodicom_options options;
   niftitodicom_read_options(argc, argv, &options, files);
+  if (options.help)
+  {
+    niftitodicom_help(stdout, argv[0]);
+    return 0;
+  }
+  else if (options.version)
+  {
+    niftitodicom_version(stdout, argv[0]);
+    return 0;
+  }
+  else if (options.invalid)
+  {
+    return 1;
+  }
 
   // whether to silence VTK warnings and errors
   vtkObject::SetGlobalWarningDisplay(options.verbose);
@@ -901,28 +919,28 @@ int MAINMACRO(int argc, char *argv[])
   if (!outpath)
   {
     fprintf(stderr,
-      "\nNo output directory was specified (\'-o\' <directory>).\n\n");
+      "No output directory was specified (\'-o\' <directory>).\n\n");
     niftitodicom_usage(stderr, argv[0]);
-    exit(1);
+    return 1;
   }
   if (!options.input)
   {
     fprintf(stderr,
-      "\nNo input file was specified (.nii or .nii.gz).\n\n");
+      "No input file was specified (.nii or .nii.gz).\n\n");
     niftitodicom_usage(stderr, argv[0]);
-    exit(1);
+    return 1;
   }
 
   int code = vtkDICOMFileDirectory::Access(outpath, vtkDICOMFileDirectory::Out);
   if (code == vtkDICOMFileDirectory::AccessDenied)
   {
     fprintf(stderr, "Cannot write to directory: %s\n", outpath);
-    exit(1);
+    return 1;
   }
   else if (code == vtkDICOMFileDirectory::ImpossiblePath)
   {
     fprintf(stderr, "option -o must name a directory, not a file.\n");
-    exit(1);
+    return 1;
   }
   else if (code == vtkDICOMFileDirectory::FileNotFound)
   {
@@ -930,11 +948,14 @@ int MAINMACRO(int argc, char *argv[])
     if (code != vtkDICOMFileDirectory::Good)
     {
       fprintf(stderr, "Cannot create directory: %s\n", outpath);
-      exit(1);
+      return 1;
     }
   }
 
-  niftitodicom_convert_files(&options, files, outpath);
+  if (niftitodicom_convert_files(&options, files, outpath))
+  {
+    return 0;
+  }
 
-  return 0;
+  return 1;
 }

@@ -13,7 +13,6 @@
 =========================================================================*/
 
 #include "vtkDICOMConfig.h"
-#include "vtkDICOMBuild.h"
 #include "vtkDICOMDictionary.h"
 #include "vtkDICOMMetaData.h"
 #include "vtkDICOMParser.h"
@@ -71,36 +70,31 @@ struct dicomtonifti_options
   bool batch;
   bool silent;
   bool verbose;
+  bool version;
+  bool help;
+  bool invalid;
   int volume;
   double time_delta;
   int time_units;
   vtkDICOMTagPath time_tagpath;
   vtkDICOMTagPath time_delta_tagpath;
   const char *output;
+  const char *descrip;
   unsigned int conversions_attempted;
 };
 
 
 // Print the version
-void dicomtonifti_version(FILE *file, const char *command_name, bool verbose)
+void dicomtonifti_version(FILE *file, const char *command_name)
 {
   const char *cp = command_name + strlen(command_name);
   while (cp != command_name && cp[-1] != '\\' && cp[-1] != '/') { --cp; }
 
-  if (!verbose)
-  {
-    fprintf(file, "%s %s\n", cp, DICOM_VERSION);
-    fprintf(file, "\n"
-      "Copyright (c) 2012-2022, David Gobbi.\n\n"
-      "This software is distributed under an open-source license.  See the\n"
-      "Copyright.txt file that comes with the vtk-dicom source distribution.\n");
-  }
-  else
-  {
-    fprintf(file,
-      "Head %8.8s, Built %s, %s\n",
-      DICOM_SOURCE_VERSION, DICOM_BUILD_DATE, DICOM_BUILD_TIME);
-  }
+  fprintf(file, "%s %s\n", cp, DICOM_VERSION);
+  fprintf(file, "\n"
+    "Copyright (c) 2012-2022, David Gobbi.\n\n"
+    "This software is distributed under an open-source license.  See the\n"
+    "Copyright.txt file that comes with the vtk-dicom source distribution.\n");
 }
 
 // Print the options
@@ -122,6 +116,7 @@ void dicomtonifti_usage(FILE *file, const char *command_name)
     "  -s --silent             Do not echo output filenames.\n"
     "  -v --verbose            Verbose error reporting.\n"
     "  -L --follow-symlinks    Follow symbolic links when recursing.\n"
+    "  --descrip <text>        Set the NIFTI descrip field to <text>.\n"
     "  --fsl                   Format axial image for use in FSL.\n"
     "  --reformat-to-axial     Reformat the image into axial orientation.\n"
     "  --no-slice-reordering   Never reorder the slices.\n"
@@ -135,7 +130,6 @@ void dicomtonifti_usage(FILE *file, const char *command_name)
     "  --time-delta            Force the time spacing to be the given value.\n"
     "  --volume N              Set which volume to output (starts at 0).\n"
     "  --version               Print the version and exit.\n"
-    "  --build-version         Print source and build version.\n"
     "  --help                  Documentation for dicomtonifti.\n"
   );
 }
@@ -340,12 +334,16 @@ void dicomtonifti_read_options(
   options->batch = false;
   options->silent = false;
   options->verbose = false;
+  options->version = false;
+  options->help = false;
+  options->invalid = false;
   options->volume = -1;
   options->time_delta = 0.0;
   options->time_units = 16;  // default to msec
   options->time_tagpath = vtkDICOMTagPath();
   options->time_delta_tagpath = vtkDICOMTagPath();
   options->output = nullptr;
+  options->descrip = nullptr;
   options->conversions_attempted = 0;
 
   // read the options from the command line
@@ -412,9 +410,10 @@ void dicomtonifti_read_options(
       {
         if (argi >= argc || argv[argi][0] == '-')
         {
-          fprintf(stderr, "\nAn argument must follow \'%s\'\n\n", arg);
+          fprintf(stderr, "An argument must follow \'%s\'\n\n", arg);
           dicomtonifti_usage(stderr, argv[0]);
-          exit(1);
+          options->invalid = true;
+          return;
         }
         const char *optionarg = arg;
         arg = argv[argi++];
@@ -422,7 +421,8 @@ void dicomtonifti_read_options(
         {
           if (!dicomtonifti_time_delta(arg, options))
           {
-            exit(1);
+            options->invalid = true;
+            return;
           }
         }
         else
@@ -431,7 +431,8 @@ void dicomtonifti_read_options(
           QueryTagList qtlist;
           if (!dicomcli_readkey(arg, &data, &qtlist))
           {
-            exit(1);
+            options->invalid = true;
+            return;
           }
           if (strcmp(optionarg, "--time-delta-tag") == 0)
           {
@@ -459,33 +460,42 @@ void dicomtonifti_read_options(
       {
         if (argi >= argc || argv[argi][0] == '-')
         {
-          fprintf(stderr, "\nA number must follow \'--volume\'\n\n");
+          fprintf(stderr, "A number must follow \'--volume\'\n\n");
           dicomtonifti_usage(stderr, argv[0]);
-          exit(1);
+          options->invalid = true;
+          return;
         }
         arg = argv[argi++];
         options->volume = atoi(arg);
       }
+      else if (strcmp(arg, "--descrip") == 0)
+      {
+        if (argi >= argc || argv[argi][0] == '-')
+        {
+          fprintf(stderr, "A string must follow \'--descrip\'\n\n");
+          dicomtonifti_usage(stderr, argv[0]);
+          options->invalid = true;
+          return;
+        }
+        arg = argv[argi++];
+        options->descrip = arg;
+      }
       else if (strcmp(arg, "--version") == 0)
       {
-        dicomtonifti_version(stdout, argv[0], false);
-        exit(0);
-      }
-      else if (strcmp(arg, "--build-version") == 0)
-      {
-        dicomtonifti_version(stdout, argv[0], true);
-        exit(0);
+        options->version = true;
+        return;
       }
       else if (strcmp(arg, "--help") == 0)
       {
-        dicomtonifti_help(stdout, argv[0]);
-        exit(0);
+        options->help = true;
+        return;
       }
       else if (arg[0] == '-' && arg[1] == '-')
       {
-        fprintf(stderr, "\nUnrecognized option %s\n\n", arg);
+        fprintf(stderr, "Unrecognized option %s\n\n", arg);
         dicomtonifti_usage(stderr, argv[0]);
-        exit(1);
+        options->invalid = true;
+        return;
       }
       else if (arg[0] == '-' && arg[1] != '-')
       {
@@ -525,9 +535,10 @@ void dicomtonifti_read_options(
             {
               if (argi >= argc)
               {
-                fprintf(stderr, "\nA file must follow the \'-o\' flag\n\n");
+                fprintf(stderr, "A file must follow the \'-o\' flag\n\n");
                 dicomtonifti_usage(stderr, argv[0]);
-                exit(1);
+                options->invalid = true;
+                return;
               }
               arg = argv[argi++];
             }
@@ -536,9 +547,10 @@ void dicomtonifti_read_options(
           }
           else
           {
-            fprintf(stderr, "\nUnrecognized \'%c\' in option %s\n\n", arg[argj], arg);
+            fprintf(stderr, "Unrecognized \'%c\' in option %s\n\n", arg[argj], arg);
             dicomtonifti_usage(stderr, argv[0]);
-            exit(1);
+            options->invalid = true;
+            return;
           }
         }
       }
@@ -603,7 +615,7 @@ std::string dicomtonifti_make_filename(
     if (*cp == '}')
     {
       fprintf(stderr, "Missing \'{\': %s\n", outfile);
-      exit(1);
+      return std::string();
     }
     if (*cp == '{')
     {
@@ -612,7 +624,7 @@ std::string dicomtonifti_make_filename(
       if (*cp != '}')
       {
         fprintf(stderr, "Unmatched \'{\': %s\n", outfile);
-        exit(1);
+        return std::string();
       }
       else
       {
@@ -633,7 +645,7 @@ std::string dicomtonifti_make_filename(
           else
           {
             fprintf(stderr, "Unrecognized key %s\n", key.c_str());
-            exit(1);
+            return std::string();
           }
         }
         if (meta)
@@ -648,7 +660,7 @@ std::string dicomtonifti_make_filename(
         {
           fprintf(stderr, "Sorry, key %s not found.\n",
                   key.c_str());
-          exit(1);
+          return std::string();
         }
         if (val.empty())
         {
@@ -664,13 +676,13 @@ std::string dicomtonifti_make_filename(
 }
 
 // Convert one DICOM series into one NIFTI file
-void dicomtonifti_convert_one(
+bool dicomtonifti_convert_one(
   dicomtonifti_options *options, vtkStringArray *a,
   const char *outfile)
 {
   // make sure there are files to read
   if (a->GetNumberOfValues() == 0) {
-    return;
+    return true;
   }
 
   // increment the number of conversions attempted
@@ -701,8 +713,9 @@ void dicomtonifti_convert_one(
     reader->GetSorter()->SetTimeTag(tag);
   }
   reader->Update();
-  if (dicomtonifti_check_error(reader)) {
-    return;
+  if (dicomtonifti_check_error(reader))
+  {
+    return false;
   }
 
   // get the output and the orientation matrix
@@ -720,7 +733,7 @@ void dicomtonifti_convert_one(
       fprintf(stderr, "Only %d volumes, but --volume %d used.\n",
               reader->GetOutput()->GetNumberOfScalarComponents(),
               options->volume);
-      return;
+      return false;
     }
     extract->SetComponents(options->volume);
     extract->Update();
@@ -909,7 +922,7 @@ void dicomtonifti_convert_one(
     vtkSmartPointer<vtkNIFTIHeader>::New();
   vtkDICOMMetaData *meta = reader->GetMetaData();
 
-  // the descrip is the date followed by the series description and ID
+  // default descrip is the date followed by the series description and ID
   std::string date = meta->Get(DC::SeriesDate).AsString();
   if (date.length() >= 8)
   {
@@ -922,6 +935,14 @@ void dicomtonifti_convert_one(
   std::string descrip = date + " " +
     meta->Get(DC::SeriesDescription).AsString() + " " +
     meta->Get(DC::StudyID).AsString();
+
+  // if user applied --descrip, then use theirs instead
+  if (options->descrip)
+  {
+    descrip = options->descrip;
+  }
+
+  // truncate to length of field
   descrip = descrip.substr(0, 79);
 
   // assume the units are millimetres/milliseconds
@@ -1052,14 +1073,21 @@ void dicomtonifti_convert_one(
   }
   writer->SetInputConnection(lastOutput);
   writer->Write();
-  dicomtonifti_check_error(writer);
+  if (dicomtonifti_check_error(writer))
+  {
+    return false;
+  }
+
+  return true;
 }
 
 // Process a list of DICOM files
-void dicomtonifti_convert_files(
+bool dicomtonifti_convert_files(
   dicomtonifti_options *options, vtkStringArray *files,
   const char *outpath, unsigned int depth)
 {
+  bool rval = true;
+
   // sort the files by filename first, as a fallback
   vtkSmartPointer<vtkSortFileNames> presorter =
     vtkSmartPointer<vtkSortFileNames>::New();
@@ -1073,8 +1101,9 @@ void dicomtonifti_convert_files(
     vtkSmartPointer<vtkDICOMFileSorter>::New();
   sorter->SetInputFileNames(presorter->GetFileNames());
   sorter->Update();
-  if (dicomtonifti_check_error(sorter)) {
-    exit(1);
+  if (dicomtonifti_check_error(sorter))
+  {
+    return false;
   }
 
   if (!options->batch)
@@ -1095,8 +1124,7 @@ void dicomtonifti_convert_files(
     if (depth != 0) {
       files = sorter->GetOutputFileNames();
     }
-    dicomtonifti_convert_one(
-      options, files, outfile.c_str());
+    rval &= dicomtonifti_convert_one(options, files, outfile.c_str());
   }
   else
   {
@@ -1119,13 +1147,20 @@ void dicomtonifti_convert_files(
         meta->Clear();
         parser->SetFileName(fname.c_str());
         parser->Update();
-        if (dicomtonifti_check_error(parser)) {
+        if (dicomtonifti_check_error(parser))
+        {
+          rval = false;
           continue;
         }
 
         // generate a filename from the meta data
         std::string outfile =
           dicomtonifti_make_filename(outpath, meta);
+        if (outfile.empty())
+        {
+          rval = false;
+          break;
+        }
 
         size_t os = outfile.length();
         if (options->compress &&
@@ -1147,7 +1182,7 @@ void dicomtonifti_convert_files(
           {
             fprintf(stderr, "Cannot create directory: %s\n",
                     dirname.c_str());
-            exit(1);
+            return false;
           }
         }
 
@@ -1157,18 +1192,22 @@ void dicomtonifti_convert_files(
         }
 
         // convert the file
-        dicomtonifti_convert_one(options, a, outfile.c_str());
+        rval &= dicomtonifti_convert_one(options, a, outfile.c_str());
       }
     }
   }
+
+  return rval;
 }
 
 // Process a list of files and directories
-void dicomtonifti_files_and_dirs(
+bool dicomtonifti_files_and_dirs(
   dicomtonifti_options *options, vtkStringArray *files,
   const char *outpath, std::set<std::string> *pastdirs,
   unsigned int depth)
 {
+  bool rval = true;
+
   // look for directories among the files
   vtkSmartPointer<vtkStringArray> directories =
     vtkSmartPointer<vtkStringArray>::New();
@@ -1217,6 +1256,7 @@ void dicomtonifti_files_and_dirs(
     if (code != vtkDICOMFileDirectory::Good)
     {
       fprintf(stderr, "Could not open directory %s\n", dirname.c_str());
+      rval = false;
     }
     else
     {
@@ -1233,9 +1273,11 @@ void dicomtonifti_files_and_dirs(
           path.PopBack();
         }
       }
-      dicomtonifti_files_and_dirs(options, files, outpath, pastdirs, depth+1);
+      rval &= dicomtonifti_files_and_dirs(options, files, outpath, pastdirs, depth+1);
     }
   }
+
+  return rval;
 }
 
 // This program will convert DICOM to NIFTI
@@ -1250,6 +1292,20 @@ int MAINMACRO(int argc, char *argv[])
 
   dicomtonifti_options options;
   dicomtonifti_read_options(argc, argv, &options, files);
+  if (options.help)
+  {
+    dicomtonifti_help(stdout, argv[0]);
+    return 0;
+  }
+  else if (options.version)
+  {
+    dicomtonifti_version(stdout, argv[0]);
+    return 0;
+  }
+  else if (options.invalid)
+  {
+    return 1;
+  }
 
   // whether to silence VTK warnings and errors
   vtkObject::SetGlobalWarningDisplay(options.verbose);
@@ -1259,9 +1315,9 @@ int MAINMACRO(int argc, char *argv[])
   if (!outpath)
   {
     fprintf(stderr,
-      "\nNo output file was specified (\'-o\' <filename>).\n\n");
+      "No output file was specified (\'-o\' <filename>).\n\n");
     dicomtonifti_usage(stderr, argv[0]);
-    exit(1);
+    return 1;
   }
 
   int code = vtkDICOMFile::Access(outpath, vtkDICOMFile::In);
@@ -1277,22 +1333,26 @@ int MAINMACRO(int argc, char *argv[])
            (l > 0 && (outpath[l-1] == '/' || outpath[l-1] == '\\'))))
   {
     fprintf(stderr, "The -o option must give a file, not a directory.\n");
-    exit(1);
+    return 1;
   }
 
   // make sure that input files were provided
   if (files->GetNumberOfValues() == 0)
   {
-    fprintf(stderr, "\nNo input files were specified.\n\n");
+    fprintf(stderr, "No input files were specified.\n\n");
     dicomtonifti_usage(stderr, argv[0]);
-    exit(1);
+    return 1;
   }
 
   std::set<std::string> pastdirs;
-  dicomtonifti_files_and_dirs(&options, files, outpath, &pastdirs, 0);
+  if (!dicomtonifti_files_and_dirs(&options, files, outpath, &pastdirs, 0))
+  {
+    return 1;
+  }
 
   if (!options.batch && options.conversions_attempted == 0) {
     fprintf(stderr, "No input DICOM files were found!\n\n");
+    return 1;
   }
 
   return 0;

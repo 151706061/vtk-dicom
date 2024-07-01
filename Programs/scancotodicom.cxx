@@ -13,7 +13,6 @@
 =========================================================================*/
 
 #include "vtkDICOMConfig.h"
-#include "vtkDICOMBuild.h"
 #include "vtkDICOMMetaData.h"
 #include "vtkDICOMParser.h"
 #include "vtkDICOMReader.h"
@@ -62,31 +61,25 @@ struct scancotodicom_options
   const char *uid_prefix;
   bool silent;
   bool verbose;
+  bool version;
+  bool help;
+  bool invalid;
   const char *output;
   const char *input;
 };
 
 
 // Print the version
-void scancotodicom_version(FILE *file, const char *command_name, bool verbose)
+void scancotodicom_version(FILE *file, const char *command_name)
 {
   const char *cp = command_name + strlen(command_name);
   while (cp != command_name && cp[-1] != '\\' && cp[-1] != '/') { --cp; }
 
-  if (!verbose)
-  {
-    fprintf(file, "%s %s\n", cp, DICOM_VERSION);
-    fprintf(file, "\n"
-      "Copyright (c) 2012-2022, David Gobbi.\n\n"
-      "This software is distributed under an open-source license.  See the\n"
-      "Copyright.txt file that comes with the vtk-dicom source distribution.\n");
-  }
-  else
-  {
-    fprintf(file,
-      "Head %8.8s, Built %s, %s\n",
-      DICOM_SOURCE_VERSION, DICOM_BUILD_DATE, DICOM_BUILD_TIME);
-  }
+  fprintf(file, "%s %s\n", cp, DICOM_VERSION);
+  fprintf(file, "\n"
+    "Copyright (c) 2012-2022, David Gobbi.\n\n"
+    "This software is distributed under an open-source license.  See the\n"
+    "Copyright.txt file that comes with the vtk-dicom source distribution.\n");
 }
 
 
@@ -108,7 +101,6 @@ void scancotodicom_usage(FILE *file, const char *command_name)
     "  --series-number         The series number to use.\n"
     "  --uid-prefix            A DICOM uid prefix (optional).\n"
     "  --version               Print the version and exit.\n"
-    "  --build-version         Print source and build version.\n"
     "  --help                  Documentation for scancotodicom.\n"
   );
 }
@@ -135,7 +127,7 @@ void scancotodicom_help(FILE *file, const char *command_name)
 }
 
 // Print error
-void scancotodicom_check_error(vtkObject *o)
+bool scancotodicom_check_error(vtkObject *o)
 {
   vtkScancoCTReader *reader = vtkScancoCTReader::SafeDownCast(o);
   vtkDICOMWriter *writer = vtkDICOMWriter::SafeDownCast(o);
@@ -165,7 +157,7 @@ void scancotodicom_check_error(vtkObject *o)
   switch(errorcode)
   {
     case vtkErrorCode::NoError:
-      return;
+      return false;
     case vtkErrorCode::FileNotFoundError:
       fprintf(stderr, "File not found: %s\n", filename);
       break;
@@ -192,7 +184,7 @@ void scancotodicom_check_error(vtkObject *o)
       break;
   }
 
-  exit(1);
+  return true;
 }
 
 // Convert a date to DICOM format (in-place conversion)
@@ -281,6 +273,9 @@ void scancotodicom_read_options(
   options->uid_prefix = "2.25";
   options->silent = false;
   options->verbose = false;
+  options->version = false;
+  options->help = false;
+  options->invalid = false;
   options->output = nullptr;
   options->input = nullptr;
 
@@ -303,8 +298,9 @@ void scancotodicom_read_options(
         if (argi >= argc ||
             argv[argi][0] == '-')
         {
-          fprintf(stderr, "\nA value must follow the \'%s\' flag\n\n", arg);
-          exit(1);
+          fprintf(stderr, "A value must follow the \'%s\' flag\n\n", arg);
+          options->invalid = true;
+          return;
         }
         if (strcmp(arg, "--series-description") == 0)
         {
@@ -330,24 +326,20 @@ void scancotodicom_read_options(
       }
       else if (strcmp(arg, "--version") == 0)
       {
-        scancotodicom_version(stdout, argv[0], false);
-        exit(0);
-      }
-      else if (strcmp(arg, "--build-version") == 0)
-      {
-        scancotodicom_version(stdout, argv[0], true);
-        exit(0);
+        options->version = true;
+        return;
       }
       else if (strcmp(arg, "--help") == 0)
       {
-        scancotodicom_help(stdout, argv[0]);
-        exit(0);
+        options->help = true;
+        return;
       }
       else if (arg[0] == '-' && arg[1] == '-')
       {
-        fprintf(stderr, "\nUnrecognized option %s\n\n", arg);
+        fprintf(stderr, "Unrecognized option %s\n\n", arg);
         scancotodicom_usage(stderr, argv[0]);
-        exit(1);
+        options->invalid = true;
+        return;
       }
       else if (arg[0] == '-' && arg[1] != '-')
       {
@@ -371,9 +363,10 @@ void scancotodicom_read_options(
             {
               if (argi >= argc)
               {
-                fprintf(stderr, "\nA file must follow the \'-o\' flag\n\n");
+                fprintf(stderr, "A file must follow the \'-o\' flag\n\n");
                 scancotodicom_usage(stderr, argv[0]);
-                exit(1);
+                options->invalid = true;
+                return;
               }
               arg = argv[argi++];
             }
@@ -382,9 +375,10 @@ void scancotodicom_read_options(
           }
           else
           {
-            fprintf(stderr, "\nUnrecognized \'%c\' in option %s\n\n", arg[argj], arg);
+            fprintf(stderr, "Unrecognized \'%c\' in option %s\n\n", arg[argj], arg);
             scancotodicom_usage(stderr, argv[0]);
-            exit(1);
+            options->invalid = true;
+            return;
           }
         }
       }
@@ -405,9 +399,10 @@ void scancotodicom_read_options(
           }
           else
           {
-            fprintf(stderr, "\nAt most one uCT file can be specified.\n");
+            fprintf(stderr, "At most one uCT file can be specified.\n");
             scancotodicom_usage(stderr, argv[0]);
-            exit(1);
+            options->invalid = true;
+            return;
           }
         }
       }
@@ -430,9 +425,10 @@ void scancotodicom_read_options(
         }
         else
         {
-          fprintf(stderr, "\nAt most one uCT file can be specified.\n");
+          fprintf(stderr, "At most one uCT file can be specified.\n");
           scancotodicom_usage(stderr, argv[0]);
-          exit(1);
+          options->invalid = true;
+          return;
         }
       }
     }
@@ -440,7 +436,7 @@ void scancotodicom_read_options(
 }
 
 // Convert one uCT file into a DICOM series
-void scancotodicom_convert_one(
+bool scancotodicom_convert_one(
   const scancotodicom_options *options,
   const char *filename,
   vtkStringArray *a,
@@ -451,7 +447,10 @@ void scancotodicom_convert_one(
     vtkSmartPointer<vtkScancoCTReader>::New();
   reader->SetFileName(filename);
   reader->UpdateInformation();
-  scancotodicom_check_error(reader);
+  if (scancotodicom_check_error(reader))
+  {
+    return false;
+  }
 
   // get info about the original scan dimensions
   int pixdim[3];
@@ -627,7 +626,12 @@ void scancotodicom_convert_one(
     writer->SetMemoryRowOrderToBottomUp();
   }
   writer->Write();
-  scancotodicom_check_error(writer);
+  if (scancotodicom_check_error(writer))
+  {
+    return false;
+  }
+
+  return true;
 }
 
 // This program will convert ScancoCT to DICOM
@@ -642,6 +646,20 @@ int MAINMACRO(int argc, char *argv[])
 
   scancotodicom_options options;
   scancotodicom_read_options(argc, argv, &options, files);
+  if (options.help)
+  {
+    scancotodicom_help(stdout, argv[0]);
+    return 0;
+  }
+  else if (options.version)
+  {
+    scancotodicom_version(stdout, argv[0]);
+    return 0;
+  }
+  else if (options.invalid)
+  {
+    return 1;
+  }
 
   // whether to silence VTK warnings and errors
   vtkObject::SetGlobalWarningDisplay(options.verbose);
@@ -657,28 +675,28 @@ int MAINMACRO(int argc, char *argv[])
   if (!outpath)
   {
     fprintf(stderr,
-      "\nNo output directory was specified (\'-o\' <directory>).\n\n");
+      "No output directory was specified (\'-o\' <directory>).\n\n");
     scancotodicom_usage(stderr, argv[0]);
-    exit(1);
+    return 1;
   }
   if (!options.input)
   {
     fprintf(stderr,
-      "\nNo input file was specified.\n\n");
+      "No input file was specified.\n\n");
     scancotodicom_usage(stderr, argv[0]);
-    exit(1);
+    return 1;
   }
 
   int code = vtkDICOMFileDirectory::Access(outpath, vtkDICOMFileDirectory::Out);
   if (code == vtkDICOMFileDirectory::AccessDenied)
   {
     fprintf(stderr, "Cannot write to directory: %s\n", outpath);
-    exit(1);
+    return 1;
   }
   else if (code == vtkDICOMFileDirectory::ImpossiblePath)
   {
     fprintf(stderr, "option -o must name a directory, not a file.\n");
-    exit(1);
+    return 1;
   }
   else if (code == vtkDICOMFileDirectory::FileNotFound)
   {
@@ -686,11 +704,14 @@ int MAINMACRO(int argc, char *argv[])
     if (code != vtkDICOMFileDirectory::Good)
     {
       fprintf(stderr, "Cannot create directory: %s\n", outpath);
-      exit(1);
+      return 1;
     }
   }
 
-  scancotodicom_convert_one(&options, options.input, files, outpath);
+  if (scancotodicom_convert_one(&options, options.input, files, outpath))
+  {
+    return 0;
+  }
 
-  return 0;
+  return 1;
 }
